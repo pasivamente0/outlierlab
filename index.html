@@ -1,0 +1,824 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OutlierLab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: barra superior fija + pestañas; cada vista es una columna de paneles (resumen arriba, detalle abajo). */
+:root{
+  --bg:#f3f4f7; --surface:#ffffff; --sunk:#e9ebf1; --line:#d9dce5;
+  --fg:#141821; --muted:#5d6475; --accent:#2f4bd8; --accent-ink:#ffffff;
+  --t1:#8a91a3; --t2:#c98a06; --t3:#e0631b; --t4:#d4202c;
+  --good:#1f8a4c;
+  --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1218; --surface:#171b24; --sunk:#1f2430; --line:#2b3140;
+  --fg:#e8eaf0; --muted:#9aa1b2; --accent:#7d93ff; --accent-ink:#0f1218;
+  --t1:#7d8496; --t2:#e9ad2c; --t3:#ff8546; --t4:#ff5a63; --good:#4cc47f; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1218; --surface:#171b24; --sunk:#1f2430; --line:#2b3140;
+  --fg:#e8eaf0; --muted:#9aa1b2; --accent:#7d93ff; --accent-ink:#0f1218;
+  --t1:#7d8496; --t2:#e9ad2c; --t3:#ff8546; --t4:#ff5a63; --good:#4cc47f; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:14px;line-height:1.5}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+button,input,select{font:inherit;color:inherit}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.bar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-block:10px}
+.brand{font-family:var(--display);font-weight:800;font-size:22px;letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
+.brand i{display:inline-block;width:12px;height:22px;background:linear-gradient(var(--t4) 0 45%,var(--t2) 45% 70%,var(--t1) 70%);border-radius:2px}
+nav.tabs{display:flex;gap:4px;flex-wrap:wrap}
+nav.tabs a{padding:6px 12px;border-radius:999px;color:var(--muted);text-decoration:none;font-weight:500}
+nav.tabs a[aria-current="page"]{background:var(--fg);color:var(--bg)}
+nav.tabs a:hover:not([aria-current]){background:var(--sunk);color:var(--fg)}
+.spacer{flex:1}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;background:var(--sunk);color:var(--muted);letter-spacing:.02em}
+.pill.live{color:var(--good)}
+.pill .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.btn{border:1px solid var(--line);background:var(--surface);padding:7px 14px;border-radius:8px;cursor:pointer;font-weight:500}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+main{padding-block:24px 64px}
+main>section{display:grid;grid-template-columns:minmax(0,1fr);gap:20px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:30px;font-weight:800}
+h2{font-size:20px;font-weight:600}
+h3{font-size:15px;font-weight:600}
+.lead{color:var(--muted);margin:4px 0 0;max-width:68ch}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;min-width:0}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.search{display:flex;gap:8px;flex-wrap:wrap}
+.search input{flex:1 1 260px;min-width:0;padding:10px 14px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:transparent;border-radius:999px;padding:4px 12px;cursor:pointer;font-size:13px}
+.chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.chhead{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.avatar{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:22px;color:#fff;flex:none;overflow:hidden}
+.avatar img{width:100%;height:100%;object-fit:cover}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:16px}
+.stat{background:var(--surface);padding:12px 14px}
+.stat .v{font-family:var(--mono);font-size:20px;font-weight:500;font-variant-numeric:tabular-nums;margin-top:2px}
+.stat .s{font-size:12px;color:var(--muted)}
+.chart{overflow-x:auto;margin-top:12px}
+.chart svg{display:block;width:100%;min-width:560px;height:auto}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:8px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend b{width:10px;height:10px;border-radius:2px;display:inline-block}
+.tablewrap{overflow-x:auto;margin-top:12px}
+table{width:100%;border-collapse:collapse;min-width:640px}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th.r,td.r{text-align:right}
+th button{all:unset;cursor:pointer}
+th button:focus-visible{outline:2px solid var(--accent)}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.title{max-width:420px}
+td.title a{color:inherit;text-decoration:none}
+td.title a:hover{text-decoration:underline}
+.sub{font-size:12px;color:var(--muted)}
+.score{display:inline-block;min-width:52px;text-align:center;font-family:var(--mono);font-weight:500;font-size:13px;padding:2px 8px;border-radius:6px;color:#fff}
+.s1{background:var(--sunk);color:var(--muted)} .s2{background:var(--t2)} .s3{background:var(--t3)} .s4{background:var(--t4)}
+.fmt{font-size:11px;font-weight:600;padding:1px 6px;border-radius:4px;border:1px solid var(--line);color:var(--muted)}
+.grid-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.vcard{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.thumb{aspect-ratio:16/9;max-width:100%;position:relative;display:grid;place-items:center;color:#fff;font-family:var(--display);font-weight:800;font-size:15px;padding:14px;text-align:center;line-height:1.2}
+.thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.thumb .score{position:absolute;top:8px;left:8px;font-size:14px}
+.thumb .dur{position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,.75);font-family:var(--mono);font-size:11px;font-weight:400;padding:1px 5px;border-radius:4px}
+.vbody{padding:12px 14px;display:grid;gap:4px}
+.vbody .t{font-weight:600;line-height:1.3}
+.vbody .t a{color:inherit;text-decoration:none}
+.niches{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.niche{display:grid;gap:10px;cursor:pointer;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
+.niche:hover{border-color:var(--muted)}
+.niche[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.kv{display:grid;grid-template-columns:1fr auto;gap:2px 12px;font-size:13px}
+.kv dt{color:var(--muted)} .kv dd{margin:0;font-family:var(--mono);text-align:right}
+.opp{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px}
+.opp.alta{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
+.opp.media{background:color-mix(in srgb,var(--t2) 20%,transparent);color:var(--t2)}
+.opp.baja{background:var(--sunk);color:var(--muted)}
+.flag{font-size:11px;font-weight:600;padding:1px 6px;border-radius:4px;background:color-mix(in srgb,var(--t4) 14%,transparent);color:var(--t4);white-space:nowrap}
+.alerts{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:8px}
+.alerts li{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:baseline;padding:10px 12px;border-radius:8px;background:var(--sunk)}
+.sev{width:10px;height:10px;border-radius:50%;display:inline-block}
+.sev.warn{background:var(--t2)} .sev.crit{background:var(--t4)}
+.empty{padding:28px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:12px}
+.note{font-size:12px;color:var(--muted);max-width:80ch}
+.err{color:var(--t4);font-weight:500}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--fg);max-width:min(520px,calc(100vw - 32px));padding:22px}
+dialog::backdrop{background:rgba(10,12,18,.5)}
+dialog input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-family:var(--mono)}
+select{padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.range{display:flex;align-items:center;gap:8px}
+input[type=range]{accent-color:var(--accent)}
+.loading{opacity:.6;pointer-events:none}
+@media (max-width:640px){h1{font-size:24px}.panel{padding:14px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stat .v{font-size:17px}}
+@media (prefers-reduced-motion:no-preference){.vcard,.niche{transition:border-color .15s}}
+</style>
+
+<header class="top">
+  <div class="wrap bar">
+    <div class="brand"><i aria-hidden="true"></i>OutlierLab</div>
+    <nav class="tabs" aria-label="Secciones">
+      <a href="#canal" data-tab="canal">Canal</a>
+      <a href="#outliers" data-tab="outliers">Outliers</a>
+      <a href="#virales" data-tab="virales">Virales</a>
+      <a href="#nichos" data-tab="nichos">Nichos</a>
+      <a href="#historial" data-tab="historial">Historial</a>
+    </nav>
+    <span class="spacer"></span>
+    <span id="modePill" class="pill"><span class="dot"></span><span id="modeText">Datos de ejemplo</span></span>
+    <button class="btn" id="openKey" type="button">Conectar YouTube</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="view-canal" hidden></section>
+  <section id="view-outliers" hidden></section>
+  <section id="view-virales" hidden></section>
+  <section id="view-nichos" hidden></section>
+  <section id="view-historial" hidden></section>
+</main>
+
+<dialog id="keyDialog">
+  <form id="keyForm" method="dialog" style="display:grid;gap:14px">
+    <h2>Conectar la API de YouTube</h2>
+    <p class="note" style="margin:0">Pega una clave de YouTube Data API v3 (Google Cloud Console → APIs y servicios → Credenciales). Se guarda solo en este navegador. Cada canal analizado gasta unas 4 unidades de cuota y cada búsqueda de nicho unas 102, de las 10.000 diarias gratuitas.</p>
+    <label for="keyInput" class="label">Clave de API</label>
+    <input id="keyInput" autocomplete="off" spellcheck="false" placeholder="AIza...">
+    <p id="keyMsg" class="note" style="margin:0"></p>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn" type="button" id="useDemo">Usar datos de ejemplo</button>
+      <button class="btn primary" type="submit" id="saveKey">Guardar y conectar</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+/* ---------- utilidades ---------- */
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const compact = new Intl.NumberFormat("es", {notation: "compact", maximumFractionDigits: 1});
+const full = new Intl.NumberFormat("es");
+const rtf = new Intl.RelativeTimeFormat("es", {numeric: "auto"});
+const fmt = n => (n < 0 ? "−" : "") + compact.format(Math.abs(Math.round(n || 0)));
+const pctF = new Intl.NumberFormat("es", {style: "percent", maximumFractionDigits: 1});
+const pct = x => pctF.format(x || 0);
+const subsFmt = new Intl.NumberFormat("es", {notation: "compact", maximumSignificantDigits: 4});
+const dec = x => x.toLocaleString("es", {maximumFractionDigits: 1});
+const DAY = 864e5;
+const median = a => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+const ageDays = d => Math.max((Date.now() - d) / DAY, 0.04);
+function ago(d) {
+  const days = (Date.now() - d) / DAY;
+  if (days < 1) return rtf.format(-Math.round(days * 24), "hour");
+  if (days < 30) return rtf.format(-Math.round(days), "day");
+  if (days < 365) return rtf.format(-Math.round(days / 30), "month");
+  return rtf.format(-Math.round(days / 365), "year");
+}
+const dur = s => { const h = s / 3600 | 0, m = (s % 3600) / 60 | 0, x = s % 60 | 0; return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(x).padStart(2, "0"); };
+const isShort = v => v.durationSec <= 180;
+// Interacción anómala: muchas vistas con muy pocos likes (umbral más bajo en Shorts). Si el canal oculta los likes, no se evalúa.
+const lowEng = v => v.likes != null && v.views >= 5000 && v.likes / v.views < (isShort(v) ? .003 : .005);
+const tier = s => s >= 10 ? 4 : s >= 5 ? 3 : s >= 2 ? 2 : 1;
+const scorePill = s => `<span class="score s${tier(s)}">${s >= 10 ? Math.round(s) : s.toFixed(1)}×</span>`;
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} }
+};
+function hue(str) { let h = 0; for (const c of str) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
+const swatch = str => `hsl(${hue(str)} 55% 42%)`;
+
+/* ---------- nichos y RPM de referencia (USD por 1.000 vistas, vídeo largo) ---------- */
+const NICHES = {
+  gaming:   {name: "Gaming", rpm: [1.5, 4]},
+  finanzas: {name: "Finanzas personales", rpm: [8, 15]},
+  tech:     {name: "Tecnología", rpm: [4, 9]},
+  cocina:   {name: "Cocina", rpm: [2, 5]},
+  ciencia:  {name: "Ciencia y educación", rpm: [3, 7]},
+  otros:    {name: "Sin clasificar", rpm: [2, 6]}
+};
+const SHORTS_RPM = [0.03, 0.08];
+
+/* ---------- datos de ejemplo (canales ficticios, generados con semilla fija) ---------- */
+function rng(seed) { return () => { seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const TITLES = {
+  gaming: {t: ["Sobreviví 100 días en {x}", "La build más rota de {x} esta temporada", "Gané en {x} sin recoger NADA", "¿Es {x} el mejor juego del año?", "Probé los peores mods de {x}", "Speedrun de {x} en directo… salió fatal", "{x}: 10 secretos que nadie te contó", "Jugué {x} con 1 de vida"], x: ["Minecraft", "Elden Ring", "Fortnite", "Hollow Knight", "Zelda", "GTA VI", "Stardew Valley", "Hades II"]},
+  finanzas: {t: ["Cómo ahorré {x} en un año con un sueldo normal", "El error de {x} que te cuesta miles", "{x}: lo que los bancos no te cuentan", "Invertir {x} al mes: simulación real a 20 años", "Revisé las finanzas de un suscriptor ({x})", "Así funciona {x} explicado en 10 minutos"], x: ["10.000 €", "los fondos indexados", "la hipoteca variable", "100 €", "el interés compuesto", "la jubilación", "las tarjetas de crédito", "la inflación"]},
+  tech: {t: ["Probé {x} durante 30 días", "{x}: análisis honesto tras un mes", "No compres {x} sin ver esto", "Monté un PC con {x}", "{x} vs su rival: comparativa real", "La verdad sobre {x}"], x: ["el iPhone 18", "las gafas de realidad mixta", "un portátil de 300 €", "la RTX 6070", "el Pixel 11", "un mini PC", "los auriculares con IA", "Linux"]},
+  cocina: {t: ["{x} en 15 minutos", "El truco de la abuela para {x}", "{x} perfecto: probé 5 métodos", "Cocinando {x} con 3 ingredientes", "{x} como en el restaurante", "Lo que como en una semana con {x}"], x: ["tortilla de patatas", "paella", "croquetas", "pan casero", "lasaña", "arroz con leche", "40 €", "masa madre"]},
+  ciencia: {t: ["¿Qué pasaría si {x}?", "La historia jamás contada de {x}", "{x} explicado con mapas", "Por qué {x} es más raro de lo que crees", "El problema de {x} que nadie resuelve", "Viajé al lugar donde {x}"], x: ["la Luna desapareciera", "el Imperio romano", "los agujeros negros", "Islandia", "el océano se secara", "el tiempo", "los pulpos", "España no tuviera montañas"]}
+};
+const DEMO_CHANNELS = [
+  ["PixelFiebre", "pixelfiebre", "gaming", 4.2e6, .07],
+  ["Modo Difícil", "mododificil", "gaming", 860e3, .09],
+  ["Respawn Lola", "respawnlola", "gaming", 210e3, .14],
+  ["Dinero Claro", "dineroclaro", "finanzas", 1.3e6, .05],
+  ["El Inversor Tranquilo", "inversortranquilo", "finanzas", 340e3, .08],
+  ["Ahorra con Marta", "ahorraconmarta", "finanzas", 95e3, .22],
+  ["Circuito Abierto", "circuitoabierto", "tech", 2.1e6, .06],
+  ["Byte a Byte", "byteabyte", "tech", 480e3, .1],
+  ["La Olla de Rosa", "laolladerosa", "cocina", 3.4e6, .04],
+  ["Cocina en 15", "cocinaen15", "cocina", 720e3, .07],
+  ["Ciencia de Bolsillo", "cienciadebolsillo", "ciencia", 5.6e6, .05],
+  ["Mapas y Datos", "mapasydatos", "ciencia", 640e3, .16]
+];
+function makeDemo() {
+  return DEMO_CHANNELS.map(([title, handle, niche, subs, reach], ci) => {
+    const r = rng(ci * 7919 + 17), tp = TITLES[niche], videos = [];
+    let t = Date.now() - r() * 2 * DAY;
+    for (let i = 0; i < 48; i++) {
+      const short = r() < .3;
+      const tmpl = tp.t[(r() * tp.t.length) | 0], x = tp.x[(r() * tp.x.length) | 0];
+      const cap = t => t[0].toUpperCase() + t.slice(1);
+      let mult = Math.exp((r() + r() + r() - 1.5) * 1.1);
+      if (r() < .06) mult *= 3 + r() * 12;              // outlier ocasional
+      const age = ageDays(t);
+      const mature = subs * reach * mult * (short ? 1.6 : 1);
+      const views = Math.round(mature * (1 - Math.exp(-age / 5)));
+      videos.push({
+        id: `demo-${ci}-${i}`, title: cap(short ? tmpl.replace("{x}", x).slice(0, 52) + " #shorts" : tmpl.replace("{x}", x)),
+        views, likes: Math.round(views * (.025 + r() * .03)), comments: Math.round(views * (.001 + r() * .003)),
+        published: t, durationSec: short ? 20 + (r() * 140 | 0) : 360 + (r() * 1800 | 0), thumb: null
+      });
+      t -= (2 + r() * 6) * DAY;
+    }
+    if (handle === "ahorraconmarta") { // ejemplo de vídeo con visitas compradas
+      const v = videos.find(x => !isShort(x) && ageDays(x.published) > 20);
+      Object.assign(v, {title: "Cómo pasé de 0 a 10.000 € ahorrados (método real)", published: Date.now() - 35 * DAY, views: 610000, likes: 1100, comments: 140});
+      videos.sort((a, b) => b.published - a.published);
+    }
+    const total = videos.reduce((a, v) => a + v.views, 0) * (2.5 + r() * 3);
+    return {id: "demo-" + ci, title, handle: "@" + handle, niche, subs, views: total, videoCount: 120 + (r() * 600 | 0),
+      created: Date.now() - (3 + r() * 9) * 365 * DAY, avatar: null, country: "ES", videos, demo: true};
+  });
+}
+
+/* ---------- orígenes del canal ---------- */
+const capF = t => t[0].toUpperCase() + t.slice(1);
+function demoOrigins(ch) {
+  const r = rng(hue(ch.title) * 131 + 5), tp = TITLES[ch.niche], vids = [], brk = 7 + (r() * 14 | 0);
+  let t = ch.created + (5 + r() * 90) * DAY;
+  for (let i = 0; i < 30; i++) {
+    const tmpl = tp.t[(r() * tp.t.length) | 0], x = tp.x[(r() * tp.x.length) | 0];
+    let views = (200 + r() * 1800) * (1 + i * .12);
+    if (i === brk) views *= 40 + r() * 80; else if (i > brk) views *= 3 + r() * 5;
+    views = Math.round(views);
+    vids.push({id: `demo-o-${ch.id}-${i}`, title: capF(tmpl.replace("{x}", x)), views, likes: views * .04 | 0, comments: views * .004 | 0,
+      published: t, durationSec: 300 + (r() * 900 | 0), thumb: null});
+    t += (3 + r() * (i < brk ? 12 : 5)) * DAY;
+  }
+  return vids;
+}
+// Recorre la lista de subidas hasta el final (cada página de 50 vídeos cuesta 1 unidad de cuota) y se queda con los 30 más antiguos.
+async function fetchOrigins(ch) {
+  let token, tail = [], pages = 0;
+  do {
+    const pl = await yt("playlistItems", {part: "contentDetails", playlistId: "UU" + ch.id.slice(2), maxResults: 50, pageToken: token});
+    tail = [...tail, ...pl.items.map(x => x.contentDetails.videoId)].slice(-30);
+    token = pl.nextPageToken; pages++;
+  } while (token && pages < 80);
+  const vids = await fetchVideos(tail);
+  vids.truncated = !!token;
+  return vids;
+}
+function originsHtml(ch) {
+  const vids = [...ch.origins].sort((a, b) => a.published - b.published);
+  if (!vids.length) return `<div class="empty">No hay vídeos públicos antiguos en este canal.</div>`;
+  const base = median(vids.map(v => v.views)) || 1;
+  vids.forEach(v => v.oScore = v.views / base);
+  const bi = Math.max(0, vids.findIndex(v => v.oScore >= 5)), brk = vids.findIndex(v => v.oScore >= 5) >= 0 ? vids[bi] : vids.reduce((a, b) => b.views > a.views ? b : a);
+  const first = vids[0], d = (a, b) => Math.round((b - a) / DAY), date = x => new Date(x).toLocaleDateString("es", {day: "numeric", month: "short", year: "numeric"});
+  const n90 = vids.filter(v => v.published - first.published <= 90 * DAY).length;
+  const before = vids.slice(0, vids.indexOf(brk));
+  return `<div class="stats" style="margin-top:12px">
+      <div class="stat"><div class="label">Primer vídeo público</div><div class="v">${date(first.published)}</div><div class="s">${d(ch.created, first.published)} días después de crear el canal</div></div>
+      <div class="stat"><div class="label">Ritmo inicial</div><div class="v">${dec(n90 / (90 / 7))}/sem</div><div class="s">${n90} vídeos en los 3 primeros meses</div></div>
+      <div class="stat"><div class="label">Antes del despegue</div><div class="v">${fmt(median(before.map(v => v.views)) || 0)}</div><div class="s">mediana de vistas de ${before.length} vídeos</div></div>
+      <div class="stat"><div class="label">Vídeo de despegue</div><div class="v">#${vids.indexOf(brk) + 1} · ${fmt(brk.views)}</div><div class="s">a los ${d(first.published, brk.published)} días de empezar · ${dec(brk.oScore)}× la mediana</div></div>
+    </div>
+    <p style="margin:14px 0 0"><span class="label">Despegue</span><br><strong>${vlink(brk)}</strong> <span class="sub">· ${date(brk.published)}</span></p>
+    <div class="tablewrap"><table><thead><tr><th>#</th><th>Vídeo</th><th class="r">Publicado</th><th class="r">Vistas hoy</th><th class="r">vs. sus primeros vídeos</th></tr></thead><tbody>
+    ${vids.map((v, i) => `<tr${v === brk ? ' style="background:var(--sunk)"' : ""}><td class="num sub">${i + 1}</td><td class="title">${vlink(v)} <span class="fmt">${isShort(v) ? "Short" : dur(v.durationSec)}</span></td>
+      <td class="r sub">${date(v.published)}</td><td class="r num">${fmt(v.views)}</td><td class="r">${scorePill(v.oScore)}</td></tr>`).join("")}</tbody></table></div>
+    <p class="note">${vids.truncated ? "El canal tiene más de 4.000 vídeos: estos son los más antiguos que la API deja recorrer. " : ""}Las vistas son las de hoy, no las que tenía cada vídeo en su momento, y los vídeos borrados u ocultos no aparecen. YouTube no publica el historial de suscriptores ni las fuentes de tráfico de canales ajenos.</p>`;
+}
+
+/* ---------- métricas ---------- */
+// Outlier score: vistas del vídeo / mediana de vistas del canal en el mismo formato (Short o largo).
+// Los vídeos de menos de 7 días se comparan contra la mediana ajustada por edad para no castigarlos.
+function enrich(ch) {
+  const groups = {s: ch.videos.filter(isShort), l: ch.videos.filter(v => !isShort(v))};
+  for (const [k, list] of Object.entries(groups)) {
+    const mature = list.filter(v => ageDays(v.published) >= 7);
+    const base = median((mature.length >= 5 ? mature : list).map(v => v.views)) || 1;
+    for (const v of list) {
+      const a = ageDays(v.published);
+      const expected = a >= 7 ? base : base * (1 - Math.exp(-a / 5)) / (1 - Math.exp(-7 / 5));
+      v.score = v.views / Math.max(expected, 1);
+      v.perDay = v.views / a;
+      v.channel = ch;
+    }
+    ch["median_" + k] = base;
+  }
+  const long = groups.l.slice(0, 30), recent = ch.videos.filter(v => ageDays(v.published) <= 30);
+  ch.avgLong = long.length ? long.reduce((a, v) => a + v.views, 0) / long.length : 0;
+  ch.engagement = median(ch.videos.map(v => (v.likes + v.comments) / Math.max(v.views, 1)));
+  const span = ch.videos.length > 1 ? (ch.videos[0].published - ch.videos[ch.videos.length - 1].published) / DAY : 30;
+  ch.perWeek = ch.videos.length / Math.max(span / 7, 1);
+  const rpm = (NICHES[ch.niche] || NICHES.otros).rpm;
+  const lv = recent.filter(v => !isShort(v)).reduce((a, v) => a + v.views, 0), sv = recent.filter(isShort).reduce((a, v) => a + v.views, 0);
+  ch.revenue = [lv / 1000 * rpm[0] + sv / 1000 * SHORTS_RPM[0], lv / 1000 * rpm[1] + sv / 1000 * SHORTS_RPM[1]];
+  ch.views30 = lv + sv;
+  ch.outlierRate = ch.videos.filter(v => v.score >= 3).length / Math.max(ch.videos.length, 1);
+  ch.viewsPerSub = median(groups.l.map(v => v.views)) / Math.max(ch.subs, 1);
+  return ch;
+}
+const money = n => n >= 1e3 ? "$" + compact.format(n) : "$" + Math.round(n);
+
+/* ---------- API de YouTube ---------- */
+const state = {key: store.get("ol_key"), channels: [], current: null, sort: {k: "published", d: -1}, fmt: "all",
+  out: {min: 3, fmt: "all", niche: "all", days: 365}, vir: {fmt: "all", days: 14}, niche: null, nicheSearch: null};
+async function yt(path, params) {
+  const u = new URL("https://www.googleapis.com/youtube/v3/" + path);
+  for (const [k, v] of Object.entries({...params, key: state.key})) if (v != null && v !== "") u.searchParams.set(k, v);
+  let r;
+  try { r = await fetch(u); }
+  catch { throw new Error("No se pudo conectar con YouTube. En la versión publicada de esta página las conexiones externas están bloqueadas: abre el archivo index.html en tu navegador para usar datos reales."); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error?.message || "Error " + r.status + " de la API de YouTube");
+  return j;
+}
+const isoDur = s => { const m = /P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/.exec(s || "") || []; return (+m[1] || 0) * 86400 + (+m[2] || 0) * 3600 + (+m[3] || 0) * 60 + (+m[4] || 0); };
+function parseChannel(s) {
+  s = s.trim();
+  let m = s.match(/(UC[\w-]{22})/); if (m) return {id: m[1]};
+  m = s.match(/youtube\.com\/@([^/?#\s]+)/) || s.match(/^@?([\w.\-·]+)$/); if (m) return {forHandle: "@" + m[1]};
+  return null;
+}
+async function fetchVideos(ids) {
+  const out = [];
+  for (let i = 0; i < ids.length; i += 50) {
+    const j = await yt("videos", {part: "snippet,statistics,contentDetails", id: ids.slice(i, i + 50).join(","), maxResults: 50});
+    for (const v of j.items || []) out.push({
+      id: v.id, title: v.snippet.title, channelId: v.snippet.channelId, channelTitle: v.snippet.channelTitle,
+      views: +v.statistics.viewCount || 0, likes: v.statistics.likeCount == null ? null : +v.statistics.likeCount, comments: +v.statistics.commentCount || 0,
+      published: Date.parse(v.snippet.publishedAt), durationSec: isoDur(v.contentDetails.duration),
+      thumb: v.snippet.thumbnails?.medium?.url || null
+    });
+  }
+  return out.sort((a, b) => b.published - a.published);
+}
+async function fetchChannel(input) {
+  const q = parseChannel(input);
+  if (!q) throw new Error("Escribe un @handle, un ID de canal (UC…) o la URL del canal.");
+  const j = await yt("channels", {part: "snippet,statistics,contentDetails", ...q});
+  const c = j.items?.[0];
+  if (!c) throw new Error("No encontré ese canal. Revisa el @handle o pega la URL completa.");
+  const ids = []; let token;
+  for (let p = 0; p < 2; p++) {
+    const pl = await yt("playlistItems", {part: "contentDetails", playlistId: c.contentDetails.relatedPlaylists.uploads, maxResults: 50, pageToken: token});
+    ids.push(...pl.items.map(x => x.contentDetails.videoId));
+    token = pl.nextPageToken; if (!token) break;
+  }
+  const saved = JSON.parse(store.get("ol_niche_" + c.id) || "null");
+  return {id: c.id, title: c.snippet.title, handle: c.snippet.customUrl || "", niche: saved || "otros",
+    subs: +c.statistics.subscriberCount || 0, views: +c.statistics.viewCount || 0, videoCount: +c.statistics.videoCount || 0,
+    created: Date.parse(c.snippet.publishedAt), avatar: c.snippet.thumbnails?.default?.url, country: c.snippet.country || "",
+    videos: await fetchVideos(ids)};
+}
+async function searchNiche(q, days) {
+  const s = await yt("search", {part: "snippet", type: "video", q, order: "viewCount", maxResults: 50,
+    publishedAfter: new Date(Date.now() - days * DAY).toISOString()});
+  const vids = await fetchVideos(s.items.map(i => i.id.videoId));
+  const chIds = [...new Set(vids.map(v => v.channelId))];
+  const subs = {};
+  for (let i = 0; i < chIds.length; i += 50) {
+    const c = await yt("channels", {part: "statistics", id: chIds.slice(i, i + 50).join(",")});
+    for (const x of c.items || []) subs[x.id] = +x.statistics.subscriberCount || 0;
+  }
+  return vids.map(v => ({...v, subs: subs[v.channelId] || 0}));
+}
+function searchDemo(q, days) {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  return state.channels.flatMap(ch => ch.videos.map(v => ({...v, channelTitle: ch.title, subs: ch.subs})))
+    .filter(v => ageDays(v.published) <= days && words.some(w => v.title.toLowerCase().includes(w) || (NICHES[v.channel.niche]?.name || "").toLowerCase().includes(w)))
+    .sort((a, b) => b.views - a.views).slice(0, 50);
+}
+
+/* ---------- piezas de interfaz ---------- */
+function thumb(v) {
+  const bg = `linear-gradient(135deg, ${swatch(v.channel?.title || v.channelTitle || "")}, hsl(${(hue(v.title) + 40) % 360} 50% 28%))`;
+  return `<div class="thumb" style="background:${bg}">${v.thumb ? `<img src="${esc(v.thumb)}" alt="" loading="lazy" onerror="this.remove()">` : esc(v.title.replace(" #shorts", "")).slice(0, 70)}
+    ${v.score != null ? scorePill(v.score) : ""}<span class="dur">${isShort(v) ? "Short · " : ""}${dur(v.durationSec)}</span></div>`;
+}
+const vlink = v => v.id.startsWith("demo") ? esc(v.title) : `<a href="https://www.youtube.com/watch?v=${esc(v.id)}" target="_blank" rel="noopener">${esc(v.title)}</a>`;
+function vcard(v, extra = "") {
+  return `<article class="vcard">${thumb(v)}<div class="vbody"><div class="t">${vlink(v)}</div>
+    <div class="sub">${esc(v.channel.title)} · ${ago(v.published)}</div>
+    <div class="row sub num" style="gap:10px"><span>${fmt(v.views)} vistas</span>${extra}</div></div></article>`;
+}
+function fmtChips(id, val) {
+  return `<div class="chips" role="group" aria-label="Formato" id="${id}">${[["all", "Todos"], ["long", "Vídeos largos"], ["short", "Shorts"]]
+    .map(([k, l]) => `<button class="chip" type="button" data-fmt="${k}" aria-pressed="${val === k}">${l}</button>`).join("")}</div>`;
+}
+const fmtOk = (v, f) => f === "all" || (f === "short") === isShort(v);
+function barChart(ch) {
+  const vids = ch.videos.filter(v => !isShort(v)).slice(0, 30).reverse();
+  if (!vids.length) return `<div class="empty">Este canal no tiene vídeos largos recientes.</div>`;
+  const W = 720, H = 220, L = 52, B = 26, T = 10, max = Math.max(...vids.map(v => v.views), ch.median_l * 1.2);
+  const nice = p => { const e = 10 ** Math.floor(Math.log10(p)), f = p / e; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * e; };
+  const step = nice(max / 4), top = Math.ceil(max / step) * step, y = v => T + (H - T - B) * (1 - v / top);
+  const bw = (W - L - 8) / vids.length;
+  let g = "";
+  for (let t = 0; t <= top + 1; t += step) g += `<line x1="${L}" x2="${W - 4}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/><text x="${L - 8}" y="${y(t) + 4}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="var(--mono)">${fmt(t)}</text>`;
+  const bars = vids.map((v, i) => `<rect x="${L + i * bw + 2}" y="${y(v.views)}" width="${Math.max(bw - 4, 2)}" height="${H - B - y(v.views)}" rx="2" fill="var(--t${tier(v.score)})"><title>${esc(v.title)} — ${full.format(v.views)} vistas (${v.score.toFixed(1)}×)</title></rect>`).join("");
+  const my = y(ch.median_l);
+  const first = new Date(vids[0].published).toLocaleDateString("es", {day: "numeric", month: "short"}), last = new Date(vids.at(-1).published).toLocaleDateString("es", {day: "numeric", month: "short"});
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Vistas de los últimos ${vids.length} vídeos largos">${g}${bars}
+    <line x1="${L}" x2="${W - 4}" y1="${my}" y2="${my}" stroke="var(--fg)" stroke-dasharray="5 4" stroke-width="1.5"/>
+    <text x="${W - 6}" y="${my - 6}" text-anchor="end" font-size="11" fill="var(--fg)" font-family="var(--mono)">mediana ${fmt(ch.median_l)}</text>
+    <text x="${L}" y="${H - 6}" font-size="11" fill="var(--muted)">${first}</text><text x="${W - 4}" y="${H - 6}" text-anchor="end" font-size="11" fill="var(--muted)">${last}</text></svg></div>
+    <div class="legend"><span><b style="background:var(--t1)"></b>&lt; 2×</span><span><b style="background:var(--t2)"></b>2–5×</span><span><b style="background:var(--t3)"></b>5–10×</span><span><b style="background:var(--t4)"></b>≥ 10× la mediana</span></div>`;
+}
+
+/* ---------- vista: Canal ---------- */
+function renderCanal(msg = "") {
+  const el = $("#view-canal"), ch = state.current;
+  const chips = state.key
+    ? recentList().map(r => `<button class="chip" type="button" data-recent="${esc(r.id)}" aria-pressed="${ch?.id === r.id}">${esc(r.title)}</button>`).join("")
+    : state.channels.map(c => `<button class="chip" type="button" data-ch="${esc(c.id)}" aria-pressed="${c === ch}">${esc(c.title)}</button>`).join("");
+  let body = "";
+  if (ch) {
+    const n = NICHES[ch.niche] || NICHES.otros;
+    const cols = [["title", "Vídeo"], ["published", "Publicado", "r"], ["views", "Vistas", "r"], ["score", "Outlier", "r"], ["perDay", "Vistas/día", "r"], ["eng", "Interacción", "r"]];
+    const rows = ch.videos.filter(v => fmtOk(v, state.fmt)).map(v => ({...v, eng: (v.likes + v.comments) / Math.max(v.views, 1)}))
+      .sort((a, b) => { const k = state.sort.k; return (a[k] > b[k] ? 1 : a[k] < b[k] ? -1 : 0) * state.sort.d; });
+    body = `<div class="panel">
+      <div class="chhead">
+        <div class="avatar" style="background:${swatch(ch.title)}">${ch.avatar ? `<img src="${esc(ch.avatar)}" alt="">` : esc(ch.title[0])}</div>
+        <div style="min-width:0;flex:1">
+          <h1>${esc(ch.title)}</h1>
+          <div class="sub">${esc(ch.handle)}${ch.country ? " · " + esc(ch.country) : ""} · creado ${ago(ch.created)}${ch.demo ? " · canal ficticio de ejemplo" : ""}</div>
+        </div>
+        <label class="row" style="gap:6px"><span class="label">Nicho</span>
+          <select id="nicheSel">${Object.entries(NICHES).map(([k, x]) => `<option value="${k}" ${k === ch.niche ? "selected" : ""}>${x.name}</option>`).join("")}</select></label>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="label">Suscriptores</div><div class="v">${fmt(ch.subs)}</div><div class="s">${full.format(ch.subs)}</div></div>
+        <div class="stat"><div class="label">Vistas totales</div><div class="v">${fmt(ch.views)}</div><div class="s">${full.format(ch.videoCount)} vídeos</div></div>
+        <div class="stat"><div class="label">Mediana por vídeo</div><div class="v">${fmt(ch.median_l)}</div><div class="s">largos · Shorts ${fmt(ch.median_s)}</div></div>
+        <div class="stat"><div class="label">Vistas / suscriptor</div><div class="v">${pct(ch.viewsPerSub)}</div><div class="s">alcance del vídeo típico</div></div>
+        <div class="stat"><div class="label">Ritmo de subida</div><div class="v">${dec(ch.perWeek)}/sem</div><div class="s">últimos ${ch.videos.length} vídeos</div></div>
+        <div class="stat"><div class="label">Interacción</div><div class="v">${pct(ch.engagement)}</div><div class="s">(likes + coment.) / vistas</div></div>
+        <div class="stat"><div class="label">Ingresos al mes (aprox.)</div><div class="v">${money(ch.revenue[0])}–${money(ch.revenue[1])}</div><div class="s">vistas de los vídeos de los últimos 30 días × RPM ${n.rpm[0]}–${n.rpm[1]} $</div></div>
+        <div class="stat"><div class="label">Tasa de outliers</div><div class="v">${pct(ch.outlierRate)}</div><div class="s">vídeos ≥ 3× la mediana</div></div>
+      </div>
+    </div>
+    <div class="panel"><div class="row" style="justify-content:space-between"><h2>Últimos vídeos largos</h2><span class="sub">Cada barra es un vídeo; el color indica cuánto supera la mediana del canal.</span></div>${barChart(ch)}</div>
+    <div class="panel" id="originsPanel">
+      <div class="row" style="justify-content:space-between"><h2>Cómo empezó</h2><span class="sub">Sus 30 primeros vídeos públicos y cuál le hizo despegar</span></div>
+      ${ch.origins ? originsHtml(ch) : `<div class="row" style="margin-top:12px"><button class="btn primary" type="button" data-origins="1">Analizar los primeros vídeos</button>${ch.originsErr ? `<span class="err">${esc(ch.originsErr)}</span>` : `<span class="sub">${ch.demo ? "" : `Gasta 1 unidad de cuota por cada 50 vídeos del canal (unas ${Math.ceil(ch.videoCount / 50) + 1}).`}</span>`}</div>`}
+    </div>
+    ${alertPanel(ch)}
+    <div class="panel">
+      <div class="row" style="justify-content:space-between"><h2>Todos los vídeos analizados</h2>${fmtChips("canalFmt", state.fmt)}</div>
+      <div class="tablewrap"><table><thead><tr>${cols.map(([k, l, c]) => `<th class="${c || ""}" aria-sort="${state.sort.k === k ? (state.sort.d > 0 ? "ascending" : "descending") : "none"}"><button type="button" data-sort="${k}">${l}${state.sort.k === k ? (state.sort.d > 0 ? " ↑" : " ↓") : ""}</button></th>`).join("")}</tr></thead>
+      <tbody>${rows.map(v => `<tr><td class="title">${vlink(v)} <span class="fmt">${isShort(v) ? "Short" : dur(v.durationSec)}</span>${lowEng(v) ? ' <span class="flag">Interacción baja</span>' : ""}</td>
+        <td class="r sub">${ago(v.published)}</td><td class="r num">${fmt(v.views)}</td><td class="r">${scorePill(v.score)}</td>
+        <td class="r num">${fmt(v.perDay)}</td><td class="r num">${pct(v.eng)}</td></tr>`).join("")}</tbody></table></div>
+    </div>`;
+  } else {
+    body = `<div class="empty">Busca un canal por su @handle o pega la URL para ver sus estadísticas, su mediana de vistas y qué vídeos son outliers.</div>`;
+  }
+  el.innerHTML = `<div><h1>Analizar canal</h1><p class="lead">${state.key ? "Busca cualquier canal de YouTube. Se analizan sus últimos 100 vídeos." : "Estás viendo 12 canales ficticios de ejemplo. Conecta tu clave de YouTube para analizar canales reales."}</p></div>
+    <div class="panel" style="display:grid;gap:12px">
+      <form class="search" id="chForm"><input id="chInput" placeholder="${state.key ? "@MrBeast o https://youtube.com/@canal" : "Conecta YouTube para buscar canales reales"}" aria-label="Canal" ${state.key ? "" : "disabled"}><button class="btn primary" ${state.key ? "" : "disabled"}>Analizar</button></form>
+      ${msg ? `<p class="${msg.startsWith("!") ? "err" : "sub"}" style="margin:0">${esc(msg.replace(/^!/, ""))}</p>` : ""}
+      ${chips ? `${state.key ? `<span class="label">Últimos canales visitados</span>` : ""}<div class="chips">${chips}</div>` : ""}
+    </div>${body}`;
+}
+
+/* ---------- vista: Outliers ---------- */
+function renderOutliers() {
+  const o = state.out;
+  const list = state.channels.flatMap(c => c.videos).filter(v => v.score >= o.min && fmtOk(v, o.fmt) && ageDays(v.published) <= o.days && (o.niche === "all" || v.channel.niche === o.niche))
+    .sort((a, b) => b.score - a.score).slice(0, 60);
+  const niches = [...new Set(state.channels.map(c => c.niche))];
+  $("#view-outliers").innerHTML = `<div><h1>Outliers</h1><p class="lead">Vídeos que superan con creces la mediana de su propio canal. Un 10× en un canal pequeño suele ser una idea que funcionaría en cualquier canal del nicho.</p></div>
+    <div class="panel row" style="gap:18px">
+      <label class="range" for="minScore"><span class="label">Mínimo</span><input type="range" id="minScore" min="1.5" max="20" step="0.5" value="${o.min}"><span class="num" id="minVal">${o.min}×</span></label>
+      ${fmtChips("outFmt", o.fmt)}
+      <select id="outNiche" aria-label="Nicho"><option value="all">Todos los nichos</option>${niches.map(k => `<option value="${k}" ${o.niche === k ? "selected" : ""}>${NICHES[k].name}</option>`).join("")}</select>
+      <select id="outDays" aria-label="Periodo">${[[30, "Último mes"], [90, "Últimos 3 meses"], [365, "Último año"], [3650, "Todo"]].map(([d, l]) => `<option value="${d}" ${o.days == d ? "selected" : ""}>${l}</option>`).join("")}</select>
+      <span class="sub num">${list.length} vídeos</span>
+    </div>
+    ${list.length ? `<div class="grid-cards">${list.map(v => vcard(v, `<span>mediana ${fmt(isShort(v) ? v.channel.median_s : v.channel.median_l)}</span>`)).join("")}</div>`
+      : `<div class="empty">${state.channels.length ? "Ningún vídeo cumple estos filtros. Baja el mínimo o amplía el periodo." : "Analiza algún canal en la pestaña Canal y aquí aparecerán sus outliers."}</div>`}`;
+}
+
+/* ---------- vista: Virales ---------- */
+function renderVirales() {
+  const f = state.vir;
+  const list = state.channels.flatMap(c => c.videos).filter(v => ageDays(v.published) <= f.days && fmtOk(v, f.fmt))
+    .sort((a, b) => b.perDay - a.perDay).slice(0, 30);
+  $("#view-virales").innerHTML = `<div><h1>Virales ahora</h1><p class="lead">Los vídeos recientes que más vistas ganan por día. El multiplicador compara cada vídeo con lo que el canal suele conseguir a esa misma edad.</p></div>
+    <div class="panel row" style="gap:18px">${fmtChips("virFmt", f.fmt)}
+      <select id="virDays" aria-label="Antigüedad">${[[3, "Últimos 3 días"], [7, "Última semana"], [14, "Últimas 2 semanas"], [30, "Último mes"]].map(([d, l]) => `<option value="${d}" ${f.days == d ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+    ${list.length ? `<div class="panel"><div class="tablewrap"><table><thead><tr><th>#</th><th>Vídeo</th><th>Canal</th><th class="r">Edad</th><th class="r">Vistas</th><th class="r">Vistas/día</th><th class="r">vs. canal</th></tr></thead><tbody>
+      ${list.map((v, i) => `<tr><td class="num sub">${i + 1}</td><td class="title">${vlink(v)} <span class="fmt">${isShort(v) ? "Short" : dur(v.durationSec)}</span></td><td class="sub">${esc(v.channel.title)}</td>
+      <td class="r sub">${ago(v.published)}</td><td class="r num">${fmt(v.views)}</td><td class="r num">${fmt(v.perDay)}</td><td class="r">${scorePill(v.score)}</td></tr>`).join("")}</tbody></table></div></div>`
+      : `<div class="empty">${state.channels.length ? "No hay vídeos publicados en ese periodo." : "Analiza canales en la pestaña Canal para ver aquí sus vídeos más rápidos."}</div>`}
+    <p class="note">Las vistas por día se calculan con las vistas actuales y la fecha de publicación. Para curvas de crecimiento reales hay que guardar instantáneas diarias, que es la siguiente pieza del producto.</p>`;
+}
+
+/* ---------- vista: Nichos ---------- */
+function nicheStats() {
+  const by = {};
+  for (const c of state.channels) (by[c.niche] ||= []).push(c);
+  return Object.entries(by).map(([k, chs]) => {
+    const vps = median(chs.map(c => c.viewsPerSub)), rate = chs.reduce((a, c) => a + c.outlierRate, 0) / chs.length;
+    const smallReach = median(chs.filter(c => c.subs < 1e6).map(c => c.viewsPerSub)) || vps;
+    const score = Math.min(1, smallReach / .25) * .5 + Math.min(1, rate / .12) * .3 + Math.min(1, NICHES[k].rpm[1] / 15) * .2;
+    return {k, chs, vps, rate, score, med: median(chs.map(c => c.median_l)), level: score >= .6 ? "alta" : score >= .4 ? "media" : "baja"};
+  }).sort((a, b) => b.score - a.score);
+}
+function renderNichos(msg = "") {
+  const stats = nicheStats(), sel = stats.find(s => s.k === state.niche) || stats[0], ns = state.nicheSearch;
+  $("#view-nichos").innerHTML = `<div><h1>Nichos</h1><p class="lead">Compara nichos por alcance, frecuencia de outliers y RPM. La oportunidad es alta cuando canales pequeños consiguen muchas vistas por suscriptor y el nicho paga bien.</p></div>
+    ${stats.length ? `<div class="grid-cards niches">${stats.map(s => `<button type="button" class="niche" data-niche="${s.k}" aria-pressed="${s === sel}">
+      <div class="row" style="justify-content:space-between"><h3>${NICHES[s.k].name}</h3><span class="opp ${s.level}">Oportunidad ${s.level}</span></div>
+      <dl class="kv"><dt>Canales</dt><dd>${s.chs.length}</dd><dt>Mediana vistas/vídeo</dt><dd>${fmt(s.med)}</dd><dt>Vistas por suscriptor</dt><dd>${pct(s.vps)}</dd>
+      <dt>Vídeos ≥ 3×</dt><dd>${pct(s.rate)}</dd><dt>RPM orientativo</dt><dd>${NICHES[s.k].rpm[0]}–${NICHES[s.k].rpm[1]} $</dd></dl></button>`).join("")}</div>` : `<div class="empty">Analiza canales y asígnales un nicho para compararlos aquí.</div>`}
+    ${sel ? `<div class="panel"><h2>Canales en ${NICHES[sel.k].name}</h2><div class="tablewrap"><table><thead><tr><th>Canal</th><th class="r">Suscriptores</th><th class="r">Mediana</th><th class="r">Vistas/sub.</th><th class="r">Ritmo</th><th class="r">Outliers</th></tr></thead><tbody>
+      ${sel.chs.sort((a, b) => b.subs - a.subs).map(c => `<tr><td><button class="chip" type="button" data-open="${esc(c.id)}">${esc(c.title)}</button></td><td class="r num">${fmt(c.subs)}</td><td class="r num">${fmt(c.median_l)}</td>
+      <td class="r num">${pct(c.viewsPerSub)}</td><td class="r num">${dec(c.perWeek)}/sem</td><td class="r num">${pct(c.outlierRate)}</td></tr>`).join("")}</tbody></table></div></div>` : ""}
+    <div class="panel" style="display:grid;gap:12px">
+      <h2>Explorar un nicho por palabra clave</h2>
+      <p class="note" style="margin:0">${state.key ? "Busca en todo YouTube los 50 vídeos más vistos sobre un tema y ordénalos por vistas frente a suscriptores: los que más destacan son ideas probadas que no dependen del tamaño del canal." : "En modo ejemplo se busca entre los vídeos de los canales ficticios. Con tu clave conectada, la búsqueda recorre todo YouTube."}</p>
+      <form class="search" id="nsForm"><input id="nsInput" placeholder="p. ej. fondos indexados, Minecraft, masa madre" value="${esc(ns?.q || "")}" aria-label="Palabra clave">
+        <select id="nsDays" aria-label="Periodo">${[[30, "Último mes"], [90, "3 meses"], [365, "1 año"]].map(([d, l]) => `<option value="${d}" ${(ns?.days || 90) == d ? "selected" : ""}>${l}</option>`).join("")}</select>
+        <button class="btn primary">Buscar</button></form>
+      ${msg ? `<p class="${msg.startsWith("!") ? "err" : "sub"}" style="margin:0">${esc(msg.replace(/^!/, ""))}</p>` : ""}
+      ${ns ? (ns.items.length ? `<div class="tablewrap"><table><thead><tr><th>Vídeo</th><th>Canal</th><th class="r">Suscriptores</th><th class="r">Vistas</th><th class="r">Vistas/sub.</th><th class="r">Publicado</th></tr></thead><tbody>
+        ${[...ns.items].sort((a, b) => b.views / Math.max(b.subs, 1) - a.views / Math.max(a.subs, 1)).map(v => { const r = v.views / Math.max(v.subs, 1);
+          return `<tr><td class="title">${vlink(v)} <span class="fmt">${isShort(v) ? "Short" : dur(v.durationSec)}</span></td><td class="sub">${esc(v.channelTitle)}</td><td class="r num">${fmt(v.subs)}</td><td class="r num">${fmt(v.views)}</td>
+          <td class="r"><span class="score s${r >= 10 ? 4 : r >= 3 ? 3 : r >= 1 ? 2 : 1}">${r >= 10 ? Math.round(r) : r.toFixed(1)}×</span></td><td class="r sub">${ago(v.published)}</td></tr>`; }).join("")}</tbody></table></div>`
+        : `<div class="empty">Sin resultados para “${esc(ns.q)}”.</div>`) : ""}
+    </div>
+    <p class="note">Oportunidad = 50 % alcance de canales de menos de 1 M de suscriptores (vistas por suscriptor) + 30 % frecuencia de outliers + 20 % RPM. Los RPM son rangos orientativos del mercado hispanohablante, no datos de YouTube.</p>`;
+}
+
+/* ---------- historial diario y señales de alerta ---------- */
+// En GitHub Pages, la tarea diaria del repositorio deja data/index.json y data/history/<canal>.json. Sin esos archivos se usan datos de ejemplo.
+async function loadHistory() {
+  state.history = {}; state.histSource = null;
+  try {
+    const r = await fetch("data/index.json", {cache: "no-store"});
+    if (!r.ok) return;
+    for (const c of await r.json()) {
+      const h = await fetch(`data/history/${c.id}.json`, {cache: "no-store"});
+      if (h.ok) state.history[c.id] = await h.json();
+    }
+    if (Object.keys(state.history).length) state.histSource = "repo";
+  } catch {}
+}
+const ytRound = x => { if (x < 1000) return Math.floor(x); const p = 10 ** (Math.floor(Math.log10(x)) - 2); return Math.floor(x / p) * p; };
+const isoDay = t => new Date(t).toISOString().slice(0, 10);
+function demoHistory(ch, ci) {
+  const r = rng(ci * 313 + 9), N = 90, days = [], sus = ch.handle === "@ahorraconmarta";
+  const daily = Math.max(ch.views30 / 30, 800), growth = ch.subs * .0007;
+  let subs = ch.subs - growth * N + (sus ? ch.subs * .035 : 0), views = ch.views - daily * N;
+  for (let i = 0; i < N; i++) {
+    let dv = daily * (.7 + r() * .6), ds = growth * (.4 + r() * 1.2);
+    if (sus && i === 55) { dv += 520000; ds *= .3; }
+    if (sus && i === 66) dv = -235000;
+    if (sus && i === 74) ds = -ch.subs * .035;
+    views += dv; subs += ds;
+    days.push({d: isoDay(Date.now() - (N - 1 - i) * DAY), subs: ytRound(subs), views: Math.round(views), videos: ch.videoCount - 12 + (i / 8 | 0)});
+  }
+  const videos = {};
+  for (const v of ch.videos.filter(v => ageDays(v.published) <= N)) {
+    const susV = sus && v.title.startsWith("Cómo pasé de 0"), s = [];
+    for (let i = 0; i < N; i++) {
+      const t = Date.now() - (N - 1 - i) * DAY; if (t < v.published) continue;
+      let views = v.views * (1 - Math.exp(-(t - v.published) / DAY / 5));
+      if (susV) views = i < 55 ? 9000 + (i - 50) * 2500 : i < 66 ? 820000 + (i - 55) * 1800 : v.views - (N - 1 - i) * 300;
+      s.push([isoDay(t), Math.round(views), v.likes == null ? null : Math.round(v.likes * views / v.views), Math.round(v.comments * views / v.views)]);
+    }
+    videos[v.id] = {title: v.title, published: isoDay(v.published), durationSec: v.durationSec, s};
+  }
+  return {id: ch.id, title: ch.title, handle: ch.handle, days, videos, demo: true};
+}
+function histAlerts(h) {
+  const D = h.days, out = [];
+  if (D.length < 2) return out;
+  const dv = [], ds = [];
+  for (let i = 1; i < D.length; i++) { dv.push(D[i].views - D[i - 1].views); ds.push(D[i].subs - D[i - 1].subs); }
+  const mdv = median(dv.filter(x => x > 0)) || 1, mds = median(ds);
+  const step = 10 ** Math.max(0, Math.floor(Math.log10(Math.max(D.at(-1).subs, 1000))) - 2);
+  dv.forEach((x, i) => {
+    const d = D[i + 1].d;
+    if (x > 4 * mdv && ds[i] <= Math.max(mds, step)) out.push({d, sev: "warn", text: `Pico de +${fmt(x)} vistas en un día (${dec(x / mdv)}× lo normal) sin subida de suscriptores`});
+    if (x < 0) out.push({d, sev: "crit", text: `Las vistas totales del canal bajaron ${fmt(-x)}: YouTube descontó visitas no válidas`});
+    if (ds[i] <= -2 * step && -ds[i] >= D[i].subs * .005) out.push({d, sev: "crit", text: `Perdió ${fmt(-ds[i])} suscriptores de golpe (${pct(-ds[i] / D[i].subs)}): posible limpieza de cuentas falsas`});
+  });
+  for (const v of Object.values(h.videos || {})) {
+    for (let j = 1; j < v.s.length; j++) {
+      const drop = v.s[j - 1][1] - v.s[j][1];
+      if (drop >= 500 && drop >= v.s[j - 1][1] * .01) { out.push({d: v.s[j][0], sev: "crit", text: `«${v.title}» perdió ${fmt(drop)} vistas en un día`}); break; }
+    }
+  }
+  return out.sort((a, b) => b.d.localeCompare(a.d));
+}
+function alertPanel(ch) {
+  const flagged = ch.videos.filter(lowEng), h = state.history[ch.id], ha = h ? histAlerts(h) : [];
+  const items = [...ha.map(a => ({...a, date: a.d})), ...flagged.map(v => ({sev: "warn", date: isoDay(v.published),
+    text: `«${v.title}»: ${fmt(v.views)} vistas y solo ${pct(v.likes / v.views)} de likes. Lo normal en vídeos largos es un 2–5 %.`}))];
+  return `<div class="panel"><div class="row" style="justify-content:space-between"><h2>Señales de alerta</h2>
+    ${h ? `<button class="btn" type="button" data-hist="${esc(ch.id)}">Ver historial diario</button>` : `<span class="sub">Sigue el canal con la tarea diaria para detectar picos y caídas</span>`}</div>
+    ${items.length ? `<ul class="alerts">${items.map(a => `<li><span class="sev ${a.sev}" aria-label="${a.sev === "crit" ? "Grave" : "Aviso"}"></span><span>${esc(a.text)}</span><span class="sub num">${a.date}</span></li>`).join("")}</ul>`
+      : `<p class="sub" style="margin:12px 0 0">Sin señales de visitas compradas en los datos disponibles.</p>`}
+    <p class="note" style="margin:10px 0 0">Son indicios, no pruebas. Un vídeo con poca interacción también puede venir de anuncios legítimos de Google Ads.</p></div>`;
+}
+function svgChart({vals, dates, type, hi = new Set(), fmtY = fmt, label}) {
+  const W = 720, H = 200, L = 56, B = 24, T = 10, n = vals.length;
+  const nice = p => { const e = 10 ** Math.floor(Math.log10(p)), f = p / e; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * e; };
+  let mn = Math.min(...vals), mx = Math.max(...vals); if (type === "bar") mn = Math.min(0, mn);
+  const step = nice((mx - mn) / 4 || Math.abs(mx) || 1), lo = Math.floor(mn / step) * step, top = Math.max(Math.ceil(mx / step) * step, lo + step);
+  const y = v => T + (H - T - B) * (1 - (v - lo) / (top - lo)), PW = W - L - 8;
+  let g = "";
+  for (let t = lo; t <= top + step / 2; t += step) g += `<line x1="${L}" x2="${W - 4}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/><text x="${L - 8}" y="${y(t) + 4}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="var(--mono)">${fmtY(t)}</text>`;
+  let marks;
+  if (type === "line") {
+    const x = i => L + PW * i / Math.max(n - 1, 1), pts = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    marks = `<polygon points="${L},${y(lo)} ${pts} ${x(n - 1)},${y(lo)}" fill="var(--accent)" opacity=".12"/><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2"/>
+      <circle cx="${x(n - 1)}" cy="${y(vals[n - 1])}" r="4" fill="var(--accent)"/>`;
+  } else {
+    const bw = PW / n;
+    marks = vals.map((v, i) => `<rect x="${L + i * bw + .5}" y="${Math.min(y(v), y(0))}" width="${Math.max(bw - 1, 1)}" height="${Math.abs(y(v) - y(0))}" fill="${v < 0 ? "var(--t4)" : hi.has(i) ? "var(--t2)" : "var(--t1)"}"><title>${dates[i]}: ${full.format(v)}</title></rect>`).join("");
+  }
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">${g}${marks}
+    <text x="${L}" y="${H - 6}" font-size="11" fill="var(--muted)">${dates[0]}</text><text x="${W - 4}" y="${H - 6}" text-anchor="end" font-size="11" fill="var(--muted)">${dates.at(-1)}</text></svg></div>`;
+}
+function renderHistorial() {
+  const el = $("#view-historial"), ids = Object.keys(state.history);
+  const intro = `<div><h1>Historial diario</h1><p class="lead">Una foto al día de cada canal que sigues: suscriptores, vistas y vistas por vídeo. Con ella se ven las curvas de crecimiento y las huellas de visitas compradas.</p></div>`;
+  if (!ids.length) { el.innerHTML = intro + `<div class="empty">Todavía no hay historial. Cada día que abras la app con tu clave conectada se guarda una foto de tus últimos 10 canales visitados; las curvas aparecen desde el segundo día.</div>`; return; }
+  const h = state.history[state.histSel] || state.history[ids[0]], D = h.days;
+  const dv = D.slice(1).map((p, i) => p.views - D[i].views), dates = D.slice(1).map(p => p.d), alerts = histAlerts(h);
+  const spikes = new Set(alerts.filter(a => a.sev === "warn").map(a => dates.indexOf(a.d)));
+  const back = D[Math.max(0, D.length - 31)], last = D.at(-1);
+  el.innerHTML = intro + `<div class="panel" style="display:grid;gap:12px"><div class="chips">${ids.map(id => `<button class="chip" type="button" data-hsel="${esc(id)}" aria-pressed="${state.history[id] === h}">${esc(state.history[id].title)}</button>`).join("")}</div>
+      <p class="sub" style="margin:0">${state.histSource === "repo" ? `Fotos diarias guardadas por tu repositorio · ${D.length} días` : h.local ? `Fotos guardadas en este navegador los días que abriste la app · ${D.length} ${D.length === 1 ? "día" : "días"}` : "Historial ficticio de ejemplo. «Ahorra con Marta» incluye un caso de visitas compradas."}</p></div>
+    <div class="panel"><h2>${esc(h.title)}</h2>
+      <div class="stats">
+        <div class="stat"><div class="label">Suscriptores</div><div class="v">${fmt(last.subs)}</div><div class="s">${last.subs - back.subs >= 0 ? "+" : "−"}${fmt(Math.abs(last.subs - back.subs))} en ${D.length - D.indexOf(back) - 1} días</div></div>
+        <div class="stat"><div class="label">Vistas ganadas</div><div class="v">${fmt(last.views - back.views)}</div><div class="s">mismo periodo</div></div>
+        <div class="stat"><div class="label">Vistas al día</div><div class="v">${fmt(median(dv))}</div><div class="s">mediana diaria</div></div>
+        <div class="stat"><div class="label">Señales de alerta</div><div class="v" style="color:${alerts.length ? "var(--t4)" : "var(--good)"}">${alerts.length}</div><div class="s">${alerts.length ? "revisa la lista de abajo" : "crecimiento normal"}</div></div>
+      </div></div>
+    ${D.length < 2 ? `<div class="empty">Hace falta al menos una segunda foto para dibujar las curvas. Vuelve mañana.</div>` : `
+    <div class="panel"><h2>Suscriptores</h2>${svgChart({vals: D.map(p => p.subs), dates: D.map(p => p.d), type: "line", label: "Suscriptores por día", fmtY: x => subsFmt.format(x)})}
+      <p class="note" style="margin:8px 0 0">YouTube redondea los suscriptores a tres cifras (4,21 M), así que la curva avanza a escalones.</p></div>
+    <div class="panel"><h2>Vistas ganadas cada día</h2>${svgChart({vals: dv, dates, type: "bar", hi: spikes, label: "Vistas ganadas por día"})}
+      <div class="legend"><span><b style="background:var(--t1)"></b>Día normal</span><span><b style="background:var(--t2)"></b>Pico sin suscriptores</span><span><b style="background:var(--t4)"></b>Vistas descontadas</span></div></div>
+    <div class="panel"><h2>Señales de alerta</h2>${alerts.length ? `<ul class="alerts">${alerts.map(a => `<li><span class="sev ${a.sev}" aria-label="${a.sev === "crit" ? "Grave" : "Aviso"}"></span><span>${esc(a.text)}</span><span class="sub num">${a.d}</span></li>`).join("")}</ul>` : `<p class="sub">Nada raro: las vistas y los suscriptores crecen a un ritmo coherente.</p>`}</div>`}`;
+}
+
+/* ---------- navegación y eventos ---------- */
+const TABS = ["canal", "outliers", "virales", "nichos", "historial"];
+const RENDER = {canal: renderCanal, outliers: renderOutliers, virales: renderVirales, nichos: renderNichos, historial: renderHistorial};
+function route() {
+  const t = TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "canal";
+  for (const k of TABS) { $("#view-" + k).hidden = k !== t; $(`[data-tab="${k}"]`).toggleAttribute("aria-current", k === t); if (k === t) $(`[data-tab="${k}"]`).setAttribute("aria-current", "page"); }
+  RENDER[t]();
+}
+function setMode() {
+  $("#modeText").textContent = state.key ? "YouTube en vivo" : "Datos de ejemplo";
+  $("#modePill").classList.toggle("live", !!state.key);
+  $("#openKey").textContent = state.key ? "Clave de API" : "Conectar YouTube";
+  state.channels = state.key ? [] : makeDemo().map(enrich);
+  state.current = state.channels[0] || null;
+  state.nicheSearch = null; state.niche = null;
+  if (state.histSource !== "repo") { state.history = {}; if (!state.key) state.channels.forEach((c, i) => state.history[c.id] = demoHistory(c, i)); }
+  if (state.key) { // recupera los últimos canales visitados y les toma la foto del día
+    if (state.histSource !== "repo") for (const r of recentList()) { const h = localHist(r.id); if (h) state.history[r.id] = h; }
+    setTimeout(refreshRecent, 0);
+  }
+  route();
+}
+// Últimos 10 canales visitados, el más reciente primero; al entrar uno nuevo sale el más antiguo.
+function recentList() {
+  try { return JSON.parse(store.get("ol_recent") || "[]").map(x => typeof x === "string" ? {id: x, title: x} : x).filter(x => x?.id); }
+  catch { return []; }
+}
+function saveRecent(ch) {
+  const list = [{id: ch.id, title: ch.title}, ...recentList().filter(x => x.id !== ch.id && x.title !== ch.title)].slice(0, 10);
+  store.set("ol_recent", JSON.stringify(list));
+}
+// Historial en el navegador: una foto por canal y día cada vez que se abre la app con la clave conectada.
+// Si la app está en GitHub Pages con la tarea diaria, manda el historial del repositorio.
+function localHist(id) { try { return JSON.parse(store.get("ol_hist_" + id) || "null"); } catch { return null; } }
+function recordSnapshot(ch) {
+  if (ch.demo) return;
+  const today = isoDay(Date.now()), cutoff = isoDay(Date.now() - 60 * DAY);
+  const h = localHist(ch.id) || {id: ch.id, days: [], videos: {}};
+  Object.assign(h, {title: ch.title, handle: ch.handle, local: true});
+  h.days = h.days.filter(p => p.d !== today).concat({d: today, subs: ch.subs, views: ch.views, videos: ch.videoCount});
+  for (const v of ch.videos.slice(0, 50)) {
+    const e = h.videos[v.id] ||= {s: []};
+    Object.assign(e, {title: v.title, published: isoDay(v.published), durationSec: v.durationSec});
+    e.s = e.s.filter(p => p[0] !== today).concat([[today, v.views, v.likes, v.comments]]);
+  }
+  for (const [id, v] of Object.entries(h.videos)) if (!v.s.length || v.s.at(-1)[0] < cutoff) delete h.videos[id];
+  store.set("ol_hist_" + ch.id, JSON.stringify(h));
+  if (state.histSource !== "repo") state.history[ch.id] = h;
+}
+async function refreshRecent() {
+  const list = recentList();
+  if (!list.length) return;
+  $("#view-canal").classList.add("loading");
+  for (const r of [...list].reverse()) {
+    try { const ch = enrich(await fetchChannel(r.id)); state.channels = [ch, ...state.channels.filter(c => c.id !== ch.id)]; recordSnapshot(ch); } catch {}
+  }
+  state.current = state.channels.find(c => c.id === list[0].id) || state.channels[0] || null;
+  $("#view-canal").classList.remove("loading");
+  route();
+}
+async function loadChannel(q, quiet) {
+  const view = $("#view-canal"); view.classList.add("loading");
+  try {
+    const ch = enrich(await fetchChannel(q));
+    state.channels = [ch, ...state.channels.filter(c => c.id !== ch.id)];
+    state.current = ch;
+    saveRecent(ch);
+    recordSnapshot(ch);
+    route();
+  } catch (e) { if (!quiet) renderCanal("!" + e.message); }
+  finally { view.classList.remove("loading"); }
+}
+document.addEventListener("submit", async e => {
+  if (e.target.id === "chForm") { e.preventDefault(); const q = $("#chInput").value; if (q.trim()) loadChannel(q); }
+  if (e.target.id === "nsForm") {
+    e.preventDefault(); const q = $("#nsInput").value.trim(), days = +$("#nsDays").value; if (!q) return;
+    const v = $("#view-nichos"); v.classList.add("loading");
+    try { state.nicheSearch = {q, days, items: state.key ? await searchNiche(q, days) : searchDemo(q, days)}; renderNichos(); }
+    catch (err) { renderNichos("!" + err.message); }
+    finally { v.classList.remove("loading"); }
+  }
+  if (e.target.id === "keyForm") {
+    e.preventDefault(); const k = $("#keyInput").value.trim();
+    if (!/^AIza[\w-]{20,}$/.test(k)) { $("#keyMsg").innerHTML = `<span class="err">La clave debería empezar por “AIza”. Cópiala de la consola de Google Cloud.</span>`; return; }
+    state.key = k; store.set("ol_key", k); $("#keyDialog").close(); setMode();
+  }
+});
+document.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.id === "openKey") { $("#keyInput").value = state.key || ""; $("#keyMsg").textContent = ""; $("#keyDialog").showModal(); }
+  if (b.id === "useDemo") { state.key = null; store.set("ol_key", null); $("#keyDialog").close(); setMode(); }
+  if (b.dataset.origins && state.current) {
+    const ch = state.current, p = $("#originsPanel"); p.classList.add("loading"); b.textContent = "Recorriendo el canal…";
+    (async () => { try { ch.origins = ch.demo ? demoOrigins(ch) : await fetchOrigins(ch); ch.originsErr = null; } catch (err) { ch.originsErr = err.message; } renderCanal(); })();
+  }
+  if (b.dataset.hist) { state.histSel = b.dataset.hist; location.hash = "historial"; }
+  if (b.dataset.hsel) { state.histSel = b.dataset.hsel; renderHistorial(); }
+  if (b.dataset.recent) {
+    const loaded = state.channels.find(c => c.id === b.dataset.recent);
+    if (loaded) { state.current = loaded; saveRecent(loaded); renderCanal(); } else loadChannel(b.dataset.recent);
+  }
+  if (b.dataset.ch) { state.current = state.channels.find(c => c.id === b.dataset.ch); renderCanal(); }
+  if (b.dataset.open) { state.current = state.channels.find(c => c.id === b.dataset.open); location.hash = "canal"; }
+  if (b.dataset.sort) { const k = b.dataset.sort; state.sort = {k, d: state.sort.k === k ? -state.sort.d : (k === "title" ? 1 : -1)}; renderCanal(); }
+  if (b.dataset.niche) { state.niche = b.dataset.niche; renderNichos(); }
+  if (b.dataset.fmt) {
+    const g = b.parentElement.id;
+    if (g === "canalFmt") { state.fmt = b.dataset.fmt; renderCanal(); }
+    if (g === "outFmt") { state.out.fmt = b.dataset.fmt; renderOutliers(); }
+    if (g === "virFmt") { state.vir.fmt = b.dataset.fmt; renderVirales(); }
+  }
+});
+document.addEventListener("input", e => {
+  if (e.target.id === "minScore") { state.out.min = +e.target.value; $("#minVal").textContent = state.out.min + "×"; clearTimeout(state.t); state.t = setTimeout(() => { renderOutliers(); $("#minScore").focus(); }, 120); }
+});
+document.addEventListener("change", e => {
+  const id = e.target.id, v = e.target.value;
+  if (id === "outNiche") { state.out.niche = v; renderOutliers(); }
+  if (id === "outDays") { state.out.days = +v; renderOutliers(); }
+  if (id === "virDays") { state.vir.days = +v; renderVirales(); }
+  if (id === "nicheSel" && state.current) { state.current.niche = v; enrich(state.current); if (!state.current.demo) store.set("ol_niche_" + state.current.id, JSON.stringify(v)); renderCanal(); }
+});
+addEventListener("hashchange", route);
+loadHistory().then(setMode);
+</script>
+</html>

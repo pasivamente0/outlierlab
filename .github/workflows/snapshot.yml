@@ -1,0 +1,33 @@
+name: Foto diaria de canales
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # todos los días a las 06:00 UTC
+  workflow_dispatch: # botón "Run workflow" para lanzarla a mano
+
+permissions:
+  contents: write
+
+concurrency:
+  group: snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Tomar la foto del día
+        run: node scripts/snapshot.mjs
+        env:
+          YT_API_KEY: ${{ secrets.YT_API_KEY }}
+      - name: Guardar los datos en el repositorio
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          git diff --cached --quiet || git commit -m "Foto diaria $(date -u +%F)"
+          git push
