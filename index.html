@@ -209,6 +209,30 @@ const NICHES = {
   otros:    {name: "Sin clasificar", rpm: [2, 6]}
 };
 const SHORTS_RPM = [0.03, 0.08];
+// Categorías oficiales que el creador puede asignar a cada vídeo (videoCategories de la API, región ES).
+const YT_CATS = {1: "Cine y animación", 2: "Automóviles y vehículos", 10: "Música", 15: "Mascotas y animales", 17: "Deportes", 19: "Viajes y eventos",
+  20: "Videojuegos", 22: "Gente y blogs", 23: "Humor", 24: "Entretenimiento", 25: "Noticias y política", 26: "Consejos y estilo",
+  27: "Educación", 28: "Ciencia y tecnología", 29: "ONG y activismo"};
+const catName = id => id ? YT_CATS[id] || "Categoría " + id : "—";
+// Nicho propuesto: palabras de los títulos + categoría oficial. Las finanzas no tienen categoría propia, así que solo salen por las palabras.
+const NICHE_WORDS = {
+  finanzas: ["dinero", "invert", "inversi", "ahorr", "bolsa", "finanz", "cripto", "bitcoin", "hipoteca", "sueldo", "salario", "negocio", "emprend", "ingreso", "pasiv", "€", "dividend", "etf", "fondo", "jubilaci", "impuesto", "hacienda"],
+  gaming: ["minecraft", "fortnite", "gameplay", "juego", "gta", "roblox", "partida", "speedrun", "gamer", "nintendo", "playstation", "xbox"],
+  tech: ["iphone", "android", "portátil", "review", "unboxing", "tecnolog", "chatgpt", "gadget", "móvil", "procesador", "rtx", "linux", "apple", "samsung"],
+  cocina: ["receta", "cocin", "tortilla", "postre", "horno", "paella", "ingrediente", "masa madre", "croqueta", "lasaña"],
+  ciencia: ["ciencia", "historia", "universo", "física", "química", "explicad", "mapa", "planeta", "agujero negro", "imperio"]
+};
+const CAT_NICHE = {20: "gaming", 28: "tech", 27: "ciencia"};
+function suggestNiche(ch) {
+  const score = {};
+  for (const v of ch.videos) {
+    const t = v.title.toLowerCase();
+    for (const [k, words] of Object.entries(NICHE_WORDS)) if (words.some(w => t.includes(w))) score[k] = (score[k] || 0) + 1;
+    if (CAT_NICHE[v.categoryId]) score[CAT_NICHE[v.categoryId]] = (score[CAT_NICHE[v.categoryId]] || 0) + .5;
+  }
+  const best = Object.entries(score).sort((a, b) => b[1] - a[1])[0];
+  return best && best[1] >= ch.videos.length * .15 ? best[0] : "otros";
+}
 
 /* ---------- datos de ejemplo (canales ficticios, generados con semilla fija) ---------- */
 function rng(seed) { return () => { seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -249,7 +273,8 @@ function makeDemo() {
       videos.push({
         id: `demo-${ci}-${i}`, title: cap(short ? tmpl.replace("{x}", x).slice(0, 52) + " #shorts" : tmpl.replace("{x}", x)),
         views, likes: Math.round(views * (.025 + r() * .03)), comments: Math.round(views * (.001 + r() * .003)),
-        published: t, durationSec: short ? 20 + (r() * 140 | 0) : 360 + (r() * 1800 | 0), thumb: null
+        published: t, durationSec: short ? 20 + (r() * 140 | 0) : 360 + (r() * 1800 | 0), thumb: null,
+        categoryId: {gaming: 20, finanzas: r() < .7 ? 27 : 22, tech: 28, cocina: 26, ciencia: 27}[niche]
       });
       t -= (2 + r() * 6) * DAY;
     }
@@ -341,6 +366,10 @@ function enrich(ch) {
   ch.revenue = [lv / 1000 * rpm[0] + sv / 1000 * SHORTS_RPM[0], lv / 1000 * rpm[1] + sv / 1000 * SHORTS_RPM[1]];
   ch.views30 = lv + sv;
   ch.outlierRate = ch.videos.filter(v => v.score >= 3).length / Math.max(ch.videos.length, 1);
+  const cats = {};
+  for (const v of ch.videos) if (v.categoryId) cats[v.categoryId] = (cats[v.categoryId] || 0) + 1;
+  const top = Object.entries(cats).sort((a, b) => b[1] - a[1])[0];
+  ch.mainCat = top ? {id: +top[0], share: top[1] / ch.videos.length} : null;
   ch.viewsPerSub = median(groups.l.map(v => v.views)) / Math.max(ch.subs, 1);
   return ch;
 }
@@ -374,7 +403,7 @@ async function fetchVideos(ids) {
       id: v.id, title: v.snippet.title, channelId: v.snippet.channelId, channelTitle: v.snippet.channelTitle,
       views: +v.statistics.viewCount || 0, likes: v.statistics.likeCount == null ? null : +v.statistics.likeCount, comments: +v.statistics.commentCount || 0,
       published: Date.parse(v.snippet.publishedAt), durationSec: isoDur(v.contentDetails.duration),
-      thumb: v.snippet.thumbnails?.medium?.url || null
+      thumb: v.snippet.thumbnails?.medium?.url || null, categoryId: +v.snippet.categoryId || null
     });
   }
   return out.sort((a, b) => b.published - a.published);
@@ -392,10 +421,12 @@ async function fetchChannel(input) {
     token = pl.nextPageToken; if (!token) break;
   }
   const saved = JSON.parse(store.get("ol_niche_" + c.id) || "null");
-  return {id: c.id, title: c.snippet.title, handle: c.snippet.customUrl || "", niche: saved || "otros",
+  const ch = {id: c.id, title: c.snippet.title, handle: c.snippet.customUrl || "", niche: saved || "otros",
     subs: +c.statistics.subscriberCount || 0, views: +c.statistics.viewCount || 0, videoCount: +c.statistics.videoCount || 0,
     created: Date.parse(c.snippet.publishedAt), avatar: c.snippet.thumbnails?.default?.url, country: c.snippet.country || "",
     videos: await fetchVideos(ids)};
+  if (!saved) { ch.niche = suggestNiche(ch); ch.nicheAuto = true; }
+  return ch;
 }
 async function searchNiche(q, days) {
   const s = await yt("search", {part: "snippet", type: "video", q, order: "viewCount", maxResults: 50,
@@ -461,8 +492,8 @@ function renderCanal(msg = "") {
   let body = "";
   if (ch) {
     const n = NICHES[ch.niche] || NICHES.otros;
-    const cols = [["title", "Vídeo"], ["published", "Publicado", "r"], ["views", "Vistas", "r"], ["score", "Outlier", "r"], ["perDay", "Vistas/día", "r"], ["eng", "Interacción", "r"]];
-    const rows = ch.videos.filter(v => fmtOk(v, state.fmt)).map(v => ({...v, eng: (v.likes + v.comments) / Math.max(v.views, 1)}))
+    const cols = [["title", "Vídeo"], ["published", "Publicado", "r"], ["views", "Vistas", "r"], ["score", "Outlier", "r"], ["perDay", "Vistas/día", "r"], ["eng", "Interacción", "r"], ["cat", "Categoría"]];
+    const rows = ch.videos.filter(v => fmtOk(v, state.fmt)).map(v => ({...v, eng: (v.likes + v.comments) / Math.max(v.views, 1), cat: catName(v.categoryId)}))
       .sort((a, b) => { const k = state.sort.k; return (a[k] > b[k] ? 1 : a[k] < b[k] ? -1 : 0) * state.sort.d; });
     body = `<div class="panel">
       <div class="chhead">
@@ -470,8 +501,9 @@ function renderCanal(msg = "") {
         <div style="min-width:0;flex:1">
           <h1>${esc(ch.title)}</h1>
           <div class="sub">${esc(ch.handle)}${ch.country ? " · " + esc(ch.country) : ""} · creado ${ago(ch.created)}${ch.demo ? " · canal ficticio de ejemplo" : ""}</div>
+          ${ch.mainCat ? `<div class="sub">Categoría en YouTube: <strong>${esc(catName(ch.mainCat.id))}</strong> (${pct(ch.mainCat.share)} de sus vídeos)</div>` : ""}
         </div>
-        <label class="row" style="gap:6px"><span class="label">Nicho</span>
+        <label class="row" style="gap:6px"><span class="label">Nicho${ch.nicheAuto ? " · propuesto" : ""}</span>
           <select id="nicheSel">${Object.entries(NICHES).map(([k, x]) => `<option value="${k}" ${k === ch.niche ? "selected" : ""}>${x.name}</option>`).join("")}</select></label>
       </div>
       <div class="stats">
@@ -496,7 +528,7 @@ function renderCanal(msg = "") {
       <div class="tablewrap"><table><thead><tr>${cols.map(([k, l, c]) => `<th class="${c || ""}" aria-sort="${state.sort.k === k ? (state.sort.d > 0 ? "ascending" : "descending") : "none"}"><button type="button" data-sort="${k}">${l}${state.sort.k === k ? (state.sort.d > 0 ? " ↑" : " ↓") : ""}</button></th>`).join("")}</tr></thead>
       <tbody>${rows.map(v => `<tr><td class="title">${vlink(v)} <span class="fmt">${isShort(v) ? "Short" : dur(v.durationSec)}</span>${lowEng(v) ? ' <span class="flag">Interacción baja</span>' : ""}</td>
         <td class="r sub">${ago(v.published)}</td><td class="r num">${fmt(v.views)}</td><td class="r">${scorePill(v.score)}</td>
-        <td class="r num">${fmt(v.perDay)}</td><td class="r num">${pct(v.eng)}</td></tr>`).join("")}</tbody></table></div>
+        <td class="r num">${fmt(v.perDay)}</td><td class="r num">${pct(v.eng)}</td><td class="sub">${esc(v.cat)}</td></tr>`).join("")}</tbody></table></div>
     </div>`;
   } else {
     body = `<div class="empty">Busca un canal por su @handle o pega la URL para ver sus estadísticas, su mediana de vistas y qué vídeos son outliers.</div>`;
@@ -816,7 +848,7 @@ document.addEventListener("change", e => {
   if (id === "outNiche") { state.out.niche = v; renderOutliers(); }
   if (id === "outDays") { state.out.days = +v; renderOutliers(); }
   if (id === "virDays") { state.vir.days = +v; renderVirales(); }
-  if (id === "nicheSel" && state.current) { state.current.niche = v; enrich(state.current); if (!state.current.demo) store.set("ol_niche_" + state.current.id, JSON.stringify(v)); renderCanal(); }
+  if (id === "nicheSel" && state.current) { state.current.niche = v; state.current.nicheAuto = false; enrich(state.current); if (!state.current.demo) store.set("ol_niche_" + state.current.id, JSON.stringify(v)); renderCanal(); }
 });
 addEventListener("hashchange", route);
 loadHistory().then(setMode);
