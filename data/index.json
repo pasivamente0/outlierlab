@@ -1,18 +1,26 @@
 [
  {
-  "id": "UCX6OQ3DkcsbYNE6H8uQQuVA",
-  "title": "MrBeast",
-  "handle": "@mrbeast",
-  "subs": 524000000,
-  "since": "2026-10-29",
-  "updated": "2026-10-29"
- },
- {
   "id": "UC4Qy-_55lUTsJ2CBshU5yOw",
   "title": "Don Dinero",
   "handle": "@dondinero_22",
-  "subs": 3720,
+  "subs": 3740,
   "since": "2026-10-29",
-  "updated": "2026-10-29"
+  "updated": "2026-10-30"
+ },
+ {
+  "id": "UCq5zrb8NPe8bwQqdBEQZwzw",
+  "title": "Pasivamente Finanzas",
+  "handle": "@pasivamente",
+  "subs": 2,
+  "since": "2026-10-30",
+  "updated": "2026-10-30"
+ },
+ {
+  "id": "UCyYkUq0qMNP-ea7LEvspkug",
+  "title": "Los Ecomonos",
+  "handle": "@ecomonos",
+  "subs": 470000,
+  "since": "2026-10-30",
+  "updated": "2026-10-30"
  }
 ]
