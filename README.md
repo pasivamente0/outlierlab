@@ -12,6 +12,8 @@ Todo es estático: `index.html` es la app completa y una tarea diaria de GitHub 
 4. **Primera foto.** *Actions → Foto diaria de canales → Run workflow*. Después se ejecuta sola cada día a las 06:00 UTC.
 5. **Publicar la app.** *Settings → Pages → Deploy from a branch → `main` / root*. La app queda en `https://<tu-usuario>.github.io/<repo>/`.
 
+El generador de títulos con IA es opcional: en *Ideas → Activar IA* pega una clave de [console.anthropic.com](https://console.anthropic.com) con saldo. Se guarda solo en tu navegador y se envía únicamente a la API de Anthropic.
+
 En la app, el botón **Conectar YouTube** pide una clave para analizar cualquier canal al momento. Esa clave se guarda solo en tu navegador. Conviene usar una segunda clave restringida por *HTTP referrer* a tu dominio de GitHub Pages, y dejar la del secreto sin esa restricción para la tarea diaria.
 
 ## Qué hace cada sección
@@ -25,6 +27,13 @@ En la app, el botón **Conectar YouTube** pide una clave para analizar cualquier
 | Virales | Vídeos recientes por vistas al día | Canales analizados |
 | Nichos | Comparativa de nichos y búsqueda por palabra clave (vistas frente a suscriptores) | Canales analizados + búsqueda (≈102 unidades) |
 | Historial | Curva de suscriptores, vistas ganadas por día y alertas | `data/history/*.json`, generado por la tarea diaria |
+| Proyecciones (en Canal) | Suscriptores a 3 meses y 1 año, próximo hito, vistas e ingresos en 1 año, rango esperado del próximo vídeo | Historial diario (regresión del último mes) + vídeos del canal |
+| Canales parecidos (en Canal) | Competidores que publican sobre los mismos temas | Búsqueda con las palabras más repetidas del canal (≈101 unidades) |
+| Comparar | Hasta 4 canales lado a lado, crecimiento relativo de suscriptores y su mejor vídeo reciente | Canales analizados + historial |
+| Ideas | Palabras y fórmulas de título que suman o restan, mejor día, hora y duración, galería de miniaturas outlier | Canales analizados (sin cuota extra) |
+| Generador de títulos (en Ideas) | Ideas de título para tu tema. Gratis con plantillas sacadas de los outliers; con una clave de Anthropic, Claude propone títulos, el porqué y un concepto de miniatura | Canales analizados + API de Anthropic opcional (unos céntimos por generación) |
+| Ficha de vídeo | Botón *Detalles*: outlier, estimación a 30 días, curva diaria, likes, vídeos parecidos y guardar | Datos ya cargados |
+| Guardados | Colecciones de vídeos guardados y exportación a CSV | Este navegador (`localStorage`) |
 
 Sin datos en `data/` (o abriendo el archivo directamente), la app muestra canales ficticios de ejemplo.
 
@@ -34,6 +43,8 @@ Sin datos en `data/` (o abriendo el archivo directamente), la app muestra canale
 - **Interacción baja**: menos de un 0,5 % de likes por vista en vídeos largos (0,3 % en Shorts) con más de 5.000 vistas.
 - **Pico sin suscriptores**: un día con más de 4× las vistas diarias habituales sin subida de suscriptores por encima de lo normal.
 - **Vistas descontadas / caída de suscriptores**: el contador baja de un día para otro. Es la señal más fiable de que YouTube ha retirado visitas o cuentas falsas.
+- **Rinde (Ideas)**: mediana del outlier score de los vídeos con ese rasgo ÷ la de la selección (o del resto, en las fórmulas de título). Con menos de 3 vídeos la fila sale en gris.
+- **Vistas a los 30 días**: vistas actuales ÷ la parte de la curva típica que ya ha recorrido el vídeo (1 − e^(−días/5)). Es una estimación genérica.
 - **Ingresos estimados**: vistas de los vídeos de los últimos 30 días × un rango de RPM por nicho. Es orientativo, no son datos de YouTube.
 
 ## Límites de la API pública
