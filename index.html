@@ -121,6 +121,24 @@ select{padding:6px 10px;border:1px solid var(--line);border-radius:8px;backgroun
 .range{display:flex;align-items:center;gap:8px}
 input[type=range]{accent-color:var(--accent)}
 .loading{opacity:.6;pointer-events:none}
+.mini{border:1px solid var(--line);background:transparent;border-radius:6px;padding:1px 8px;font-size:12px;cursor:pointer;color:var(--muted);white-space:nowrap}
+.mini:hover{color:var(--fg);border-color:var(--muted)}
+.mini.on{color:var(--accent);border-color:var(--accent)}
+.meter{height:8px;border-radius:4px;background:var(--sunk);overflow:hidden;min-width:48px}
+.meter b{display:block;height:100%;background:var(--accent);border-radius:4px}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr));gap:20px}
+table.lift{min-width:0;margin-top:8px}
+table.lift td{padding:6px 8px}
+tr.dim td{opacity:.55}
+.cmp td .meter{margin-top:4px}
+.cmp td.win{font-weight:600}
+.cmp td.win .meter b{background:var(--good)}
+.summary{margin:10px 0 0;padding:12px 14px;border-radius:8px;background:var(--sunk);line-height:1.6}
+dialog.wide{max-width:min(780px,calc(100vw - 32px));width:100%;max-height:calc(100vh - 32px)}
+.vhead{display:grid;grid-template-columns:200px minmax(0,1fr);gap:16px;align-items:start}
+.stats.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.vhead .thumb{border-radius:8px;overflow:hidden;font-size:12px}
+@media (max-width:640px){.vhead{grid-template-columns:minmax(0,1fr)}.stats.three{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:640px){h1{font-size:24px}.panel{padding:14px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stat .v{font-size:17px}}
 @media (prefers-reduced-motion:no-preference){.vcard,.niche{transition:border-color .15s}}
 </style>
@@ -130,10 +148,13 @@ input[type=range]{accent-color:var(--accent)}
     <div class="brand"><i aria-hidden="true"></i>OutlierLab</div>
     <nav class="tabs" aria-label="Secciones">
       <a href="#canal" data-tab="canal">Canal</a>
+      <a href="#comparar" data-tab="comparar">Comparar</a>
       <a href="#outliers" data-tab="outliers">Outliers</a>
       <a href="#virales" data-tab="virales">Virales</a>
+      <a href="#ideas" data-tab="ideas">Ideas</a>
       <a href="#nichos" data-tab="nichos">Nichos</a>
       <a href="#historial" data-tab="historial">Historial</a>
+      <a href="#guardados" data-tab="guardados">Guardados</a>
     </nav>
     <span class="spacer"></span>
     <span id="modePill" class="pill"><span class="dot"></span><span id="modeText">Datos de ejemplo</span></span>
@@ -143,10 +164,13 @@ input[type=range]{accent-color:var(--accent)}
 
 <main class="wrap">
   <section id="view-canal" hidden></section>
+  <section id="view-comparar" hidden></section>
   <section id="view-outliers" hidden></section>
   <section id="view-virales" hidden></section>
+  <section id="view-ideas" hidden></section>
   <section id="view-nichos" hidden></section>
   <section id="view-historial" hidden></section>
+  <section id="view-guardados" hidden></section>
 </main>
 
 <dialog id="keyDialog">
@@ -162,6 +186,8 @@ input[type=range]{accent-color:var(--accent)}
     </div>
   </form>
 </dialog>
+
+<dialog id="vidDialog" class="wide" aria-label="Detalles del vídeo"><div id="vidBody"></div></dialog>
 
 <script>
 "use strict";
@@ -377,7 +403,8 @@ const money = n => n >= 1e3 ? "$" + compact.format(n) : "$" + Math.round(n);
 
 /* ---------- API de YouTube ---------- */
 const state = {key: store.get("ol_key"), channels: [], current: null, sort: {k: "published", d: -1}, fmt: "all",
-  out: {min: 3, fmt: "all", niche: "all", days: 365}, vir: {fmt: "all", days: 14}, niche: null, nicheSearch: null};
+  out: {min: 3, fmt: "all", niche: "all", days: 365}, vir: {fmt: "all", days: 14}, niche: null, nicheSearch: null,
+  cmp: null, idea: {ch: "all", fmt: "all", q: ""}, savedCol: "all"};
 async function yt(path, params) {
   const u = new URL("https://www.googleapis.com/youtube/v3/" + path);
   for (const [k, v] of Object.entries({...params, key: state.key})) if (v != null && v !== "") u.searchParams.set(k, v);
@@ -456,8 +483,8 @@ function thumb(v) {
 const vlink = v => v.id.startsWith("demo") ? esc(v.title) : `<a href="https://www.youtube.com/watch?v=${esc(v.id)}" target="_blank" rel="noopener">${esc(v.title)}</a>`;
 function vcard(v, extra = "") {
   return `<article class="vcard">${thumb(v)}<div class="vbody"><div class="t">${vlink(v)}</div>
-    <div class="sub">${esc(v.channel.title)} · ${ago(v.published)}</div>
-    <div class="row sub num" style="gap:10px"><span>${fmt(v.views)} vistas</span>${extra}</div></div></article>`;
+    <div class="sub">${esc(chName(v))} · ${ago(v.published)}</div>
+    <div class="row sub num" style="gap:10px"><span>${fmt(v.views)} vistas</span>${extra}${detBtn(v)}</div></div></article>`;
 }
 function fmtChips(id, val) {
   return `<div class="chips" role="group" aria-label="Formato" id="${id}">${[["all", "Todos"], ["long", "Vídeos largos"], ["short", "Shorts"]]
@@ -522,11 +549,13 @@ function renderCanal(msg = "") {
       <div class="row" style="justify-content:space-between"><h2>Cómo empezó</h2><span class="sub">Sus 30 primeros vídeos públicos y cuál le hizo despegar</span></div>
       ${ch.origins ? originsHtml(ch) : `<div class="row" style="margin-top:12px"><button class="btn primary" type="button" data-origins="1">Analizar los primeros vídeos</button>${ch.originsErr ? `<span class="err">${esc(ch.originsErr)}</span>` : `<span class="sub">${ch.demo ? "" : `Gasta 1 unidad de cuota por cada 50 vídeos del canal (unas ${Math.ceil(ch.videoCount / 50) + 1}).`}</span>`}</div>`}
     </div>
+    ${projectionPanel(ch)}
     ${alertPanel(ch)}
+    ${similarPanel(ch)}
     <div class="panel">
-      <div class="row" style="justify-content:space-between"><h2>Todos los vídeos analizados</h2>${fmtChips("canalFmt", state.fmt)}</div>
+      <div class="row" style="justify-content:space-between"><h2>Todos los vídeos analizados</h2><div class="row">${fmtChips("canalFmt", state.fmt)}<button class="btn" type="button" data-csv="canal">Exportar CSV</button></div></div>
       <div class="tablewrap"><table><thead><tr>${cols.map(([k, l, c]) => `<th class="${c || ""}" aria-sort="${state.sort.k === k ? (state.sort.d > 0 ? "ascending" : "descending") : "none"}"><button type="button" data-sort="${k}">${l}${state.sort.k === k ? (state.sort.d > 0 ? " ↑" : " ↓") : ""}</button></th>`).join("")}</tr></thead>
-      <tbody>${rows.map(v => `<tr><td class="title">${vlink(v)} <span class="fmt">${isShort(v) ? "Short" : dur(v.durationSec)}</span>${lowEng(v) ? ' <span class="flag">Interacción baja</span>' : ""}</td>
+      <tbody>${rows.map(v => `<tr><td class="title">${vlink(v)} <span class="fmt">${isShort(v) ? "Short" : dur(v.durationSec)}</span>${lowEng(v) ? ' <span class="flag">Interacción baja</span>' : ""} ${detBtn(v)}</td>
         <td class="r sub">${ago(v.published)}</td><td class="r num">${fmt(v.views)}</td><td class="r">${scorePill(v.score)}</td>
         <td class="r num">${fmt(v.perDay)}</td><td class="r num">${pct(v.eng)}</td><td class="sub">${esc(v.cat)}</td></tr>`).join("")}</tbody></table></div>
     </div>`;
@@ -568,10 +597,10 @@ function renderVirales() {
     <div class="panel row" style="gap:18px">${fmtChips("virFmt", f.fmt)}
       <select id="virDays" aria-label="Antigüedad">${[[3, "Últimos 3 días"], [7, "Última semana"], [14, "Últimas 2 semanas"], [30, "Último mes"]].map(([d, l]) => `<option value="${d}" ${f.days == d ? "selected" : ""}>${l}</option>`).join("")}</select></div>
     ${list.length ? `<div class="panel"><div class="tablewrap"><table><thead><tr><th>#</th><th>Vídeo</th><th>Canal</th><th class="r">Edad</th><th class="r">Vistas</th><th class="r">Vistas/día</th><th class="r">vs. canal</th></tr></thead><tbody>
-      ${list.map((v, i) => `<tr><td class="num sub">${i + 1}</td><td class="title">${vlink(v)} <span class="fmt">${isShort(v) ? "Short" : dur(v.durationSec)}</span></td><td class="sub">${esc(v.channel.title)}</td>
+      ${list.map((v, i) => `<tr><td class="num sub">${i + 1}</td><td class="title">${vlink(v)} <span class="fmt">${isShort(v) ? "Short" : dur(v.durationSec)}</span> ${detBtn(v)}</td><td class="sub">${esc(v.channel.title)}</td>
       <td class="r sub">${ago(v.published)}</td><td class="r num">${fmt(v.views)}</td><td class="r num">${fmt(v.perDay)}</td><td class="r">${scorePill(v.score)}</td></tr>`).join("")}</tbody></table></div></div>`
       : `<div class="empty">${state.channels.length ? "No hay vídeos publicados en ese periodo." : "Analiza canales en la pestaña Canal para ver aquí sus vídeos más rápidos."}</div>`}
-    <p class="note">Las vistas por día se calculan con las vistas actuales y la fecha de publicación. Para curvas de crecimiento reales hay que guardar instantáneas diarias, que es la siguiente pieza del producto.</p>`;
+    <p class="note">Las vistas por día se calculan con las vistas actuales y la fecha de publicación. Abre los Detalles de un vídeo para ver su curva diaria cuando el canal tiene historial y su estimación a 30 días.</p>`;
 }
 
 /* ---------- vista: Nichos ---------- */
@@ -604,7 +633,7 @@ function renderNichos(msg = "") {
       ${msg ? `<p class="${msg.startsWith("!") ? "err" : "sub"}" style="margin:0">${esc(msg.replace(/^!/, ""))}</p>` : ""}
       ${ns ? (ns.items.length ? `<div class="tablewrap"><table><thead><tr><th>Vídeo</th><th>Canal</th><th class="r">Suscriptores</th><th class="r">Vistas</th><th class="r">Vistas/sub.</th><th class="r">Publicado</th></tr></thead><tbody>
         ${[...ns.items].sort((a, b) => b.views / Math.max(b.subs, 1) - a.views / Math.max(a.subs, 1)).map(v => { const r = v.views / Math.max(v.subs, 1);
-          return `<tr><td class="title">${vlink(v)} <span class="fmt">${isShort(v) ? "Short" : dur(v.durationSec)}</span></td><td class="sub">${esc(v.channelTitle)}</td><td class="r num">${fmt(v.subs)}</td><td class="r num">${fmt(v.views)}</td>
+          return `<tr><td class="title">${vlink(v)} <span class="fmt">${isShort(v) ? "Short" : dur(v.durationSec)}</span> ${detBtn(v)}</td><td class="sub">${esc(v.channelTitle)}</td><td class="r num">${fmt(v.subs)}</td><td class="r num">${fmt(v.views)}</td>
           <td class="r"><span class="score s${r >= 10 ? 4 : r >= 3 ? 3 : r >= 1 ? 2 : 1}">${r >= 10 ? Math.round(r) : r.toFixed(1)}×</span></td><td class="r sub">${ago(v.published)}</td></tr>`; }).join("")}</tbody></table></div>`
         : `<div class="empty">Sin resultados para “${esc(ns.q)}”.</div>`) : ""}
     </div>
@@ -728,9 +757,323 @@ function renderHistorial() {
     <div class="panel"><h2>Señales de alerta</h2>${alerts.length ? `<ul class="alerts">${alerts.map(a => `<li><span class="sev ${a.sev}" aria-label="${a.sev === "crit" ? "Grave" : "Aviso"}"></span><span>${esc(a.text)}</span><span class="sub num">${a.d}</span></li>`).join("")}</ul>` : `<p class="sub">Nada raro: las vistas y los suscriptores crecen a un ritmo coherente.</p>`}</div>`}`;
 }
 
+/* ---------- texto de los títulos ---------- */
+const STOP = new Set(("el la los las un una unos unas de del al a en y e o u que por para con sin mi mis tu tus su sus es son era fue lo le les se me te nos os más mas muy como qué cómo cuál este esta esto estos estas ese esa eso aquí así hay ha he has han ser estar todo toda todos todas cuando donde pero porque ya si sí no ni otro otra hasta desde sobre entre tras parte nuevo nueva " +
+  "the a an of to in on at for and or is are was be my your his her our with i you we it its this that what how why vs ft feat shorts short video vídeo videos vídeos parte part official oficial").split(" "));
+const words = t => (t.toLowerCase().replace(/#\S+/g, " ").match(/[\p{L}\p{N}]+/gu) || []).filter(w => w.length > 2 && !STOP.has(w) && !/^\d+$/.test(w));
+const unent = s => { const t = document.createElement("textarea"); t.innerHTML = s; return t.value; };
+const chName = v => v.channel?.title || v.channelTitle || "";
+const chIdOf = v => v.channel?.id || v.channelId || "";
+function topWords(vids, exclude = "") {
+  const ex = new Set(words(exclude)), c = {};
+  for (const v of vids) for (const w of new Set(words(v.title))) if (!ex.has(w)) c[w] = (c[w] || 0) + 1;
+  return Object.entries(c).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+}
+
+/* ---------- proyecciones ---------- */
+const quant = (a, p) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y), i = (s.length - 1) * p, lo = Math.floor(i); return s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo); };
+function slope(pts) {
+  const n = pts.length, mx = pts.reduce((a, p) => a + p[0], 0) / n, my = pts.reduce((a, p) => a + p[1], 0) / n;
+  let num = 0, den = 0;
+  for (const [x, y] of pts) { num += (x - mx) * (y - my); den += (x - mx) ** 2; }
+  return den ? num / den : 0;
+}
+const MILESTONES = [1e3, 1e4, 5e4, 1e5, 2.5e5, 5e5, 1e6, 2e6, 5e6, 1e7, 2e7, 5e7, 1e8, 2e8, 5e8];
+// Tendencia: regresión lineal sobre las fotos diarias del último mes. Sin una semana de historial, las vistas salen de los vídeos del último mes.
+function trend(ch) {
+  const D = (state.history[ch.id]?.days || []).slice(-31);
+  const t0 = D.length ? Date.parse(D[0].d) : 0, span = D.length ? (Date.parse(D.at(-1).d) - t0) / DAY : 0;
+  if (D.length >= 5 && span >= 6) {
+    const x = p => (Date.parse(p.d) - t0) / DAY;
+    return {spd: slope(D.map(p => [x(p), p.subs])), vpd: slope(D.map(p => [x(p), p.views])), days: Math.round(span), hist: true};
+  }
+  return {spd: null, vpd: ch.views30 / 30, hist: false};
+}
+function projectionPanel(ch) {
+  const tr = trend(ch), when = n => new Date(Date.now() + n * DAY).toLocaleDateString("es", {month: "short", year: "numeric"});
+  const next = MILESTONES.find(m => m > ch.subs), toNext = tr.spd > 0 && next ? (next - ch.subs) / tr.spd : null;
+  const mature = ch.videos.filter(v => ageDays(v.published) >= 7);
+  const ml = mature.filter(v => !isShort(v)).map(v => v.views), ms = mature.filter(isShort).map(v => v.views);
+  const subsCell = (n, l) => `<div class="stat"><div class="label">Suscriptores ${l}</div><div class="v">${tr.spd == null ? "—" : fmt(Math.max(0, ch.subs + tr.spd * n))}</div>
+    <div class="s">${tr.spd == null ? "hace falta una semana de historial" : (tr.spd >= 0 ? "+" : "−") + fmt(Math.abs(tr.spd * n))}</div></div>`;
+  const nextCell = (l, a) => `<div class="stat"><div class="label">${l}</div><div class="v">${a.length >= 3 ? fmt(quant(a, .5)) : "—"}</div><div class="s">${a.length >= 3 ? `lo normal: ${fmt(quant(a, .25))}–${fmt(quant(a, .75))}` : "pocos vídeos de este formato"}</div></div>`;
+  return `<div class="panel"><div class="row" style="justify-content:space-between"><h2>Proyecciones</h2><span class="sub">Qué pasa si el canal sigue al ritmo actual</span></div>
+    <div class="stats">
+      ${subsCell(90, "en 3 meses")}${subsCell(365, "en 1 año")}
+      <div class="stat"><div class="label">Próximo hito</div><div class="v">${next ? subsFmt.format(next) : "—"}</div><div class="s">${toNext ? (toNext < 3650 ? `hacia ${when(toNext)} (${fmt(toNext)} días)` : "a más de 10 años") : tr.spd == null ? "hace falta historial" : "ahora no crece"}</div></div>
+      <div class="stat"><div class="label">Vistas en 1 año</div><div class="v">+${fmt(tr.vpd * 365)}</div><div class="s">${fmt(tr.vpd)} al día</div></div>
+      ${nextCell("Próximo vídeo largo", ml)}${nextCell("Próximo Short", ms)}
+      <div class="stat"><div class="label">Ingresos en 1 año (aprox.)</div><div class="v">${money(ch.revenue[0] * 12)}–${money(ch.revenue[1] * 12)}</div><div class="s">al ritmo del último mes</div></div>
+      <div class="stat"><div class="label">Vídeos en 1 año</div><div class="v">${Math.round(ch.perWeek * 52)}</div><div class="s">a ${dec(ch.perWeek)} por semana · ${pct(ch.outlierRate)} serán outliers</div></div>
+    </div>
+    <p class="note" style="margin:10px 0 0">${tr.hist ? `Tendencia lineal de los últimos ${tr.days} días de historial.` : "Sin historial suficiente: las vistas al día salen de los vídeos del último mes y los suscriptores necesitan al menos una semana de fotos diarias."} El próximo vídeo usa el rango habitual (percentiles 25–75) de sus vídeos de más de una semana. Es una extrapolación: un solo outlier cambia la curva.</p></div>`;
+}
+
+/* ---------- canales parecidos ---------- */
+// Con la API: busca vídeos con las 3 palabras más repetidas en sus títulos y cuenta qué canales aparecen más (≈101 unidades de cuota).
+async function findSimilar(ch) {
+  if (ch.demo) {
+    const mine = new Set(topWords(ch.videos, ch.title).slice(0, 25));
+    return state.channels.filter(c => c !== ch).map(c => ({id: c.id, title: c.title, subs: c.subs,
+      hits: topWords(c.videos, c.title).slice(0, 25).filter(w => mine.has(w)).length + (c.niche === ch.niche ? 5 : 0),
+      sample: c.videos.reduce((a, b) => b.score > a.score ? b : a).title})).filter(x => x.hits > 2).sort((a, b) => b.hits - a.hits).slice(0, 8);
+  }
+  const q = topWords(ch.videos, ch.title).slice(0, 3).join(" ");
+  if (!q) return [];
+  const s = await yt("search", {part: "snippet", type: "video", q, maxResults: 50});
+  const by = {};
+  for (const it of s.items || []) {
+    const id = it.snippet.channelId; if (id === ch.id) continue;
+    (by[id] ||= {id, title: unent(it.snippet.channelTitle), hits: 0, sample: unent(it.snippet.title)}).hits++;
+  }
+  const top = Object.values(by).sort((a, b) => b.hits - a.hits).slice(0, 12);
+  if (top.length) {
+    const c = await yt("channels", {part: "statistics", id: top.map(x => x.id).join(",")});
+    for (const x of c.items || []) { const t = top.find(y => y.id === x.id); if (t) t.subs = +x.statistics.subscriberCount || 0; }
+  }
+  top.q = q;
+  return top;
+}
+function similarPanel(ch) {
+  const s = ch.similar;
+  const body = s ? (s.length ? `${s.q ? `<p class="sub" style="margin:8px 0 0">Buscado por: <strong>${esc(s.q)}</strong></p>` : ""}
+      <div class="tablewrap"><table><thead><tr><th>Canal</th><th class="r">Suscriptores</th><th class="r">Afinidad</th><th>Vídeo de ejemplo</th><th></th></tr></thead><tbody>
+      ${s.map(x => `<tr><td>${esc(x.title)}</td><td class="r num">${x.subs != null ? fmt(x.subs) : "—"}</td><td class="r num">${x.hits}</td><td class="title sub">${esc(x.sample)}</td>
+        <td class="r"><button class="mini" type="button" data-analyze="${esc(x.id)}">Analizar</button></td></tr>`).join("")}</tbody></table></div>`
+      : `<div class="empty" style="margin-top:12px">No encontré canales parecidos.</div>`)
+    : `<div class="row" style="margin-top:12px"><button class="btn" type="button" data-similar="1">Buscar canales parecidos</button>${ch.similarErr ? `<span class="err">${esc(ch.similarErr)}</span>` : `<span class="sub">${ch.demo ? "" : "Gasta unas 101 unidades de cuota."}</span>`}</div>`;
+  return `<div class="panel" id="similarPanel"><div class="row" style="justify-content:space-between"><h2>Canales parecidos</h2><span class="sub">Competidores que publican sobre los mismos temas</span></div>${body}</div>`;
+}
+
+/* ---------- guardados ---------- */
+function savedList() { try { return JSON.parse(store.get("ol_saved") || "[]"); } catch { return []; } }
+const putSaved = list => store.set("ol_saved", JSON.stringify(list));
+function snap(v, col) {
+  return {id: v.id, title: v.title, channelTitle: chName(v), channelId: chIdOf(v), views: v.views, likes: v.likes, comments: v.comments,
+    score: v.score ?? null, perDay: v.perDay ?? v.views / ageDays(v.published), thumb: v.thumb, published: v.published, durationSec: v.durationSec,
+    col: col || "General", savedAt: Date.now()};
+}
+function findVideo(id) {
+  for (const c of state.channels) { const v = c.videos.find(x => x.id === id); if (v) return v; }
+  return state.nicheSearch?.items.find(x => x.id === id) || savedList().find(x => x.id === id) || null;
+}
+const detBtn = v => `<button class="mini" type="button" data-vid="${esc(v.id)}">Detalles</button>`;
+function renderGuardados() {
+  const all = savedList(), cols = [...new Set(all.map(x => x.col))];
+  if (state.savedCol !== "all" && !cols.includes(state.savedCol)) state.savedCol = "all";
+  const list = all.filter(x => state.savedCol === "all" || x.col === state.savedCol).sort((a, b) => b.savedAt - a.savedAt);
+  $("#view-guardados").innerHTML = `<div><h1>Guardados</h1><p class="lead">Tu archivo de ideas: guarda vídeos desde su ficha (botón Detalles) y agrúpalos en colecciones, por ejemplo «Miniaturas», «Para grabar» o «Competencia».</p></div>
+    <div class="panel row" style="justify-content:space-between">
+      <div class="chips">${[["all", `Todas (${all.length})`], ...cols.map(c => [c, `${c} (${all.filter(x => x.col === c).length})`])]
+        .map(([k, l]) => `<button class="chip" type="button" data-scol="${esc(k)}" aria-pressed="${state.savedCol === k}">${esc(l)}</button>`).join("")}</div>
+      ${list.length ? `<button class="btn" type="button" data-csv="saved">Exportar CSV</button>` : ""}
+    </div>
+    ${list.length ? `<div class="grid-cards">${list.map(v => `<article class="vcard">${thumb(v)}<div class="vbody"><div class="t">${vlink(v)}</div>
+      <div class="sub">${esc(v.channelTitle)} · ${ago(v.published)} · ${esc(v.col)}</div>
+      <div class="row sub num" style="gap:10px"><span>${fmt(v.views)} vistas al guardar</span>${detBtn(v)}<button class="mini" type="button" data-unsave="${esc(v.id)}">Quitar</button></div></div></article>`).join("")}</div>`
+      : `<div class="empty">Todavía no has guardado nada. Abre los Detalles de cualquier vídeo y pulsa Guardar.</div>`}
+    <p class="note">Se guardan en este navegador. Exporta el CSV para pasarlos a otro equipo o a una hoja de cálculo.</p>`;
+}
+function downloadCsv(name, rows) {
+  const cell = x => { const s = String(x ?? ""); return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["﻿" + rows.map(r => r.map(cell).join(",")).join("\n")], {type: "text/csv;charset=utf-8"}));
+  a.download = name; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+const ytUrl = v => v.id.startsWith("demo") ? "" : "https://www.youtube.com/watch?v=" + v.id;
+function exportCsv(kind) {
+  const day = isoDay(Date.now());
+  if (kind === "saved") return downloadCsv(`outlierlab-guardados-${day}.csv`, [["Colección", "Título", "Canal", "URL", "Publicado", "Duración", "Vistas", "Outlier", "Vistas/día", "Guardado"],
+    ...savedList().map(v => [v.col, v.title, v.channelTitle, ytUrl(v), isoDay(v.published), dur(v.durationSec), v.views, v.score == null ? "" : v.score.toFixed(2), Math.round(v.perDay), isoDay(v.savedAt)])]);
+  const ch = state.current; if (!ch) return;
+  downloadCsv(`${(ch.handle || ch.title).replace(/[^\w-]+/g, "")}-${day}.csv`, [["Título", "URL", "Publicado", "Formato", "Duración", "Vistas", "Likes", "Comentarios", "Outlier", "Vistas/día", "Interacción", "Categoría"],
+    ...ch.videos.map(v => [v.title, ytUrl(v), isoDay(v.published), isShort(v) ? "Short" : "Largo", dur(v.durationSec), v.views, v.likes ?? "", v.comments,
+      v.score.toFixed(2), Math.round(v.perDay), ((v.likes + v.comments) / Math.max(v.views, 1)).toFixed(4), catName(v.categoryId)])]);
+}
+
+/* ---------- ficha de vídeo ---------- */
+// Curva típica de un vídeo: la mayoría de las vistas llegan en la primera semana (≈ 1 − e^(−días/5)).
+const reach = d => (1 - Math.exp(-d / 5)) / (1 - Math.exp(-30 / 5));
+function similarVideos(v) {
+  const mine = new Set(words(v.title)); if (!mine.size) return [];
+  return state.channels.flatMap(c => c.videos).filter(x => x.id !== v.id)
+    .map(x => ({x, k: [...new Set(words(x.title))].filter(w => mine.has(w)).length})).filter(o => o.k >= 2 || (o.k === 1 && mine.size <= 3))
+    .sort((a, b) => b.k - a.k || b.x.score - a.x.score).slice(0, 6).map(o => o.x);
+}
+function openVideo(id) {
+  const v = findVideo(id); if (!v) return;
+  state.vidOpen = id;
+  const a = ageDays(v.published), hv = state.history[chIdOf(v)]?.videos?.[id];
+  const perDay = v.perDay ?? v.views / a, expected = v.score ? v.views / v.score : null;
+  const all = savedList(), was = all.find(x => x.id === id), cols = [...new Set(["General", ...all.map(x => x.col)])];
+  const sim = similarVideos(v), likeR = v.likes != null ? v.likes / Math.max(v.views, 1) : null;
+  let proj;
+  if (a < 1) proj = `<div class="stat"><div class="label">Vistas a los 30 días</div><div class="v">—</div><div class="s">tiene menos de un día</div></div>`;
+  else if (a < 30) proj = `<div class="stat"><div class="label">Vistas a los 30 días</div><div class="v">≈ ${fmt(v.views / reach(a))}</div><div class="s">estimación con la curva típica</div></div>`;
+  else {
+    const g = hv && hv.s.length >= 2 ? (hv.s.at(-1)[1] - hv.s[0][1]) / Math.max((Date.parse(hv.s.at(-1)[0]) - Date.parse(hv.s[0][0])) / DAY, 1) : null;
+    proj = `<div class="stat"><div class="label">Ritmo actual</div><div class="v">${g == null ? "—" : fmt(g) + "/día"}</div><div class="s">${g == null ? "sin historial de este vídeo" : "según las fotos diarias"}</div></div>`;
+  }
+  $("#vidBody").innerHTML = `<div style="display:grid;gap:16px">
+    <div class="row" style="justify-content:space-between;align-items:flex-start;flex-wrap:nowrap"><span class="label">Ficha del vídeo</span><button class="btn" type="button" data-close="1" aria-label="Cerrar">Cerrar</button></div>
+    <div class="vhead">${thumb(v)}<div style="min-width:0"><h2>${vlink(v)}</h2>
+      <p class="sub" style="margin:4px 0 0">${esc(chName(v))} · ${ago(v.published)} · ${isShort(v) ? "Short" : "Vídeo largo"} de ${dur(v.durationSec)}${v.categoryId ? " · " + esc(catName(v.categoryId)) : ""}</p>
+      <div class="row" style="margin-top:12px;gap:8px">
+        ${was ? `<span class="sub">Guardado en <strong>${esc(was.col)}</strong></span><button class="btn" type="button" data-unsave="${esc(id)}">Quitar</button>`
+          : `<input id="saveCol" list="colList" value="General" aria-label="Colección" style="width:150px;padding:6px 10px;font-family:var(--body)"><datalist id="colList">${cols.map(c => `<option value="${esc(c)}">`).join("")}</datalist>
+             <button class="btn primary" type="button" data-save="${esc(id)}">Guardar</button>`}
+      </div></div></div>
+    <div class="stats three" style="margin:0">
+      <div class="stat"><div class="label">Vistas</div><div class="v">${fmt(v.views)}</div><div class="s">${full.format(v.views)}</div></div>
+      <div class="stat"><div class="label">Outlier</div><div class="v">${v.score != null ? dec(v.score) + "×" : "—"}</div><div class="s">${expected ? `lo normal a esta edad: ${fmt(expected)}` : "sin datos del canal"}</div></div>
+      <div class="stat"><div class="label">Vistas al día</div><div class="v">${fmt(perDay)}</div><div class="s">de media desde que salió</div></div>
+      ${proj}
+      <div class="stat"><div class="label">Likes</div><div class="v">${likeR == null ? "oculto" : pct(likeR)}</div><div class="s">${likeR == null ? "el canal oculta los likes" : fmt(v.likes) + " likes por vista"}</div></div>
+      <div class="stat"><div class="label">Comentarios</div><div class="v">${fmt(v.comments)}</div><div class="s">${pct(v.comments / Math.max(v.views, 1))} de las vistas</div></div>
+    </div>
+    ${hv && hv.s.length >= 2 ? `<div><h3>Vistas acumuladas (historial diario)</h3>${svgChart({vals: hv.s.map(p => p[1]), dates: hv.s.map(p => p[0]), type: "line", label: "Vistas acumuladas del vídeo"})}</div>`
+      : `<p class="note" style="margin:0">Cuando el canal tenga historial diario, aquí verás la curva de vistas de este vídeo día a día.</p>`}
+    ${sim.length ? `<div><h3>Vídeos parecidos</h3><div class="tablewrap"><table style="min-width:0"><tbody>${sim.map(x => `<tr><td class="title">${esc(x.title)}<div class="sub">${esc(chName(x))} · ${ago(x.published)}</div></td>
+      <td class="r num">${fmt(x.views)}</td><td class="r">${scorePill(x.score)}</td><td class="r">${detBtn(x)}</td></tr>`).join("")}</tbody></table></div></div>` : ""}
+  </div>`;
+  const d = $("#vidDialog"); if (!d.open) d.showModal();
+  d.scrollTop = 0;
+}
+
+/* ---------- vista: Comparar ---------- */
+const CMP_COLORS = ["var(--accent)", "var(--t3)", "var(--good)", "var(--t2)"];
+const CMP = [
+  ["Suscriptores", c => c.subs, fmt],
+  ["Vistas totales", c => c.views, fmt],
+  ["Mediana vídeo largo", c => c.videos.some(v => !isShort(v)) ? c.median_l : null, fmt],
+  ["Mediana Short", c => c.videos.some(isShort) ? c.median_s : null, fmt],
+  ["Vistas por suscriptor", c => c.viewsPerSub, pct],
+  ["Vistas al día", c => trend(c).vpd, fmt],
+  ["Suscriptores ganados en 30 días", c => { const D = state.history[c.id]?.days; if (!D || D.length < 2) return null; return D.at(-1).subs - D[Math.max(0, D.length - 31)].subs; }, x => (x >= 0 ? "+" : "−") + fmt(Math.abs(x))],
+  ["Ritmo de subida", c => c.perWeek, x => dec(x) + "/sem"],
+  ["Interacción", c => c.engagement, pct],
+  ["Tasa de outliers", c => c.outlierRate, pct],
+  ["Mejor outlier en 90 días", c => Math.max(0, ...c.videos.filter(v => ageDays(v.published) <= 90).map(v => v.score)), x => dec(x) + "×"],
+  ["Ingresos al mes (máx. aprox.)", c => c.revenue[1], money],
+  ["Antigüedad del canal", c => (Date.now() - c.created) / DAY / 365, x => dec(x) + " años"]
+];
+function multiLine(series, label) {
+  const W = 720, H = 220, L = 56, B = 24, T = 10, all = series.flatMap(s => s.pts);
+  const x0 = Math.min(...all.map(p => p[0])), x1 = Math.max(...all.map(p => p[0]));
+  const lo = Math.min(0, ...all.map(p => p[1])), hi = Math.max(...all.map(p => p[1]), lo + .001);
+  const x = t => L + (W - L - 8) * (t - x0) / Math.max(x1 - x0, 1), y = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+  let g = "";
+  for (let i = 0; i <= 4; i++) { const v = lo + (hi - lo) * i / 4; g += `<line x1="${L}" x2="${W - 4}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="var(--mono)">${v >= 0 ? "+" : ""}${pct(v)}</text>`; }
+  const lines = series.map(s => `<polyline points="${s.pts.map(p => `${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(" ")}" fill="none" stroke="${s.color}" stroke-width="2"/>`).join("");
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">${g}${lines}
+    <text x="${L}" y="${H - 6}" font-size="11" fill="var(--muted)">${isoDay(x0)}</text><text x="${W - 4}" y="${H - 6}" text-anchor="end" font-size="11" fill="var(--muted)">${isoDay(x1)}</text></svg></div>
+    <div class="legend">${series.map(s => `<span><b style="background:${s.color}"></b>${esc(s.name)}</span>`).join("")}</div>`;
+}
+function renderComparar() {
+  const chs = state.channels, el = $("#view-comparar");
+  state.cmp = (state.cmp || chs.slice(0, 3).map(c => c.id)).filter(id => chs.some(c => c.id === id));
+  const sel = state.cmp.map(id => chs.find(c => c.id === id));
+  const intro = `<div><h1>Comparar canales</h1><p class="lead">Pon hasta 4 canales lado a lado: tamaño, alcance real de cada vídeo, ritmo, outliers e ingresos. En verde, el mejor de cada fila.</p></div>`;
+  if (chs.length < 2) { el.innerHTML = intro + `<div class="empty">Analiza al menos dos canales en la pestaña Canal para compararlos.</div>`; return; }
+  const rows = CMP.map(([l, f, fm]) => {
+    const vals = sel.map(c => f(c)), max = Math.max(...vals.filter(x => x != null).map(Math.abs), 1e-9), best = Math.max(...vals.filter(x => x != null));
+    return `<tr><td class="sub">${l}</td>${vals.map(x => `<td class="r num${x != null && x === best && sel.length > 1 ? " win" : ""}">${x == null ? "—" : fm(x)}${x == null ? "" : `<div class="meter"><b style="width:${Math.abs(x) / max * 100}%"></b></div>`}</td>`).join("")}</tr>`;
+  }).join("");
+  const series = sel.map((c, i) => ({c, i, D: state.history[c.id]?.days || []})).filter(s => s.D.length >= 2)
+    .map(s => ({name: s.c.title, color: CMP_COLORS[s.i], pts: s.D.slice(-90).map(p => [Date.parse(p.d), p.subs / Math.max(s.D.slice(-90)[0].subs, 1) - 1])}));
+  el.innerHTML = intro + `<div class="panel" style="display:grid;gap:10px"><span class="label">Elige hasta 4 canales</span><div class="chips">${chs.map(c => `<button class="chip" type="button" data-cmp="${esc(c.id)}" aria-pressed="${state.cmp.includes(c.id)}">${esc(c.title)}</button>`).join("")}</div></div>
+    ${sel.length ? `<div class="panel"><div class="tablewrap"><table class="cmp"><thead><tr><th>Métrica</th>${sel.map((c, i) => `<th class="r"><span style="color:${CMP_COLORS[i]}">●</span> ${esc(c.title)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div></div>
+    <div class="panel"><h2>Crecimiento de suscriptores</h2>${series.length ? multiLine(series, "Crecimiento relativo de suscriptores") + `<p class="note" style="margin:8px 0 0">Variación respecto al primer día del historial, para comparar canales de tamaños distintos.</p>` : `<p class="sub">Ninguno de estos canales tiene historial diario todavía.</p>`}</div>
+    <div class="panel"><h2>Sus mejores vídeos de los últimos 90 días</h2><div class="grid-cards" style="margin-top:12px">${sel.map(c => c.videos.filter(v => ageDays(v.published) <= 90).sort((a, b) => b.score - a.score)[0]).filter(Boolean).map(v => vcard(v)).join("")}</div></div>`
+      : `<div class="empty">Elige algún canal.</div>`}`;
+}
+
+/* ---------- vista: Ideas (títulos, miniaturas, día y duración) ---------- */
+const FEATS = [
+  ["Lleva un número", t => /\d/.test(t)],
+  ["Es una pregunta", t => /[?¿]/.test(t)],
+  ["Alguna palabra en MAYÚSCULAS", t => /(^|[^\p{L}])\p{Lu}{3,}(?![\p{L}])/u.test(t)],
+  ["Primera persona (probé, gané, hice…)", t => /(^|[^\p{L}])(prob[ée]|gan[ée]|hice|compr[ée]|sobreviv[ií]|viaj[ée]|mont[ée]|jugu[ée]|ahorr[ée]|pas[ée]|constru[ií]|com[ií]|me|mi|i|my)(?![\p{L}])/iu.test(t)],
+  ["Reto con tiempo (24 h, 30 días…)", t => /\d+\s?(h|horas?|d[ií]as?|semanas?|meses|mes|años?|hours?|days?|weeks?|months?|years?)(?![\p{L}])/iu.test(t)],
+  ["Cifra de dinero", t => /[€$£]|\d\s?(euros?|d[óo]lares|k)(?![\p{L}])/iu.test(t)],
+  ["Comparación (vs, contra)", t => /(^|[^\p{L}])(vs\.?|versus|contra)(?![\p{L}])/iu.test(t)],
+  ["Superlativo o absoluto (mejor, peor, nadie…)", t => /(^|[^\p{L}])(mejor|peor|más|nunca|jamás|nadie|todos?|único|best|worst|most|never|ever)(?![\p{L}])/iu.test(t)],
+  ["Advertencia (no, error, cuidado, verdad)", t => /(^|[^\p{L}])(no|error|errores|cuidado|verdad|secreto|nadie te|don'?t|stop|truth)(?![\p{L}])/iu.test(t)],
+  ["Paréntesis o corchetes", t => /[()[\]]/.test(t)],
+  ["Título corto (< 40 caracteres)", t => t.replace(/#\S+/g, "").trim().length < 40],
+  ["Título largo (> 65 caracteres)", t => t.replace(/#\S+/g, "").trim().length > 65]
+];
+const WD = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+const HOURS = [[0, 6, "Madrugada (0–6 h)"], [6, 12, "Mañana (6–12 h)"], [12, 15, "Mediodía (12–15 h)"], [15, 18, "Tarde (15–18 h)"], [18, 21, "Tarde-noche (18–21 h)"], [21, 24, "Noche (21–24 h)"]];
+const DURS = [[-1, 180, "Short (≤ 3 min)"], [180, 480, "3–8 min"], [480, 720, "8–12 min"], [720, 1200, "12–20 min"], [1200, 2400, "20–40 min"], [2400, 1e9, "Más de 40 min"]];
+const MIN_N = 3;
+// Lift: mediana del outlier score de los vídeos del grupo ÷ mediana de todos (o del resto, en las fórmulas de título). 1,5× = rinden un 50 % más.
+function liftOf(group, rest) { return group.length ? median(group.map(v => v.score)) / (median(rest.map(v => v.score)) || 1) : 0; }
+function liftTable(rows, hint) {
+  const mx = Math.max(...rows.map(r => r.lift), 1.5);
+  return `<table class="lift"><thead><tr><th></th><th class="r">Vídeos</th><th></th><th class="r">Rinde</th></tr></thead><tbody>${rows.map(r => {
+    const dim = r.n < MIN_N, col = dim ? "var(--t1)" : r.lift >= 1.15 ? "var(--good)" : r.lift <= .87 ? "var(--t3)" : "var(--t1)";
+    return `<tr${dim ? ' class="dim"' : ""}${r.tip ? ` title="${esc(r.tip)}"` : ""}><td>${esc(r.label)}</td><td class="r sub num">${r.n}</td><td style="width:38%"><div class="meter"><b style="width:${Math.min(100, r.lift / mx * 100)}%;background:${col}"></b></div></td><td class="r num">${r.n ? dec(r.lift) + "×" : "—"}</td></tr>`;
+  }).join("")}</tbody></table>${hint ? `<p class="note" style="margin:6px 0 0">${hint}</p>` : ""}`;
+}
+function ideaPool() {
+  const s = state.idea;
+  if (s.ch !== "all" && !state.channels.some(c => c.id === s.ch)) s.ch = "all";
+  return state.channels.filter(c => s.ch === "all" || c.id === s.ch).flatMap(c => c.videos).filter(v => fmtOk(v, s.fmt) && ageDays(v.published) >= 3);
+}
+function galleryHtml(pool) {
+  const q = (state.idea.q || "").toLowerCase().trim();
+  const gal = pool.filter(v => !q || v.title.toLowerCase().includes(q) || chName(v).toLowerCase().includes(q)).sort((a, b) => b.score - a.score).slice(0, 24);
+  return gal.length ? `<div class="grid-cards">${gal.map(v => vcard(v)).join("")}</div>` : `<div class="empty">Ninguna miniatura coincide con “${esc(q)}”.</div>`;
+}
+function renderIdeas() {
+  const s = state.idea, pool = ideaPool(), el = $("#view-ideas");
+  const intro = `<div><h1>Ideas</h1><p class="lead">Qué tienen en común los vídeos que más destacan: palabras y fórmulas de título, miniaturas, día y hora de publicación y duración. Todo se mide con el outlier score, así que un canal grande no pesa más que uno pequeño.</p></div>
+    <div class="panel row" style="gap:18px"><select id="ideaCh" aria-label="Canales"><option value="all">Todos los canales analizados (${state.channels.length})</option>${state.channels.map(c => `<option value="${esc(c.id)}" ${s.ch === c.id ? "selected" : ""}>${esc(c.title)}</option>`).join("")}</select>
+      ${fmtChips("ideaFmt", s.fmt)}<span class="sub num">${pool.length} vídeos</span></div>`;
+  if (pool.length < 12) { el.innerHTML = intro + `<div class="empty">Hacen falta al menos 12 vídeos para sacar patrones. Analiza más canales o amplía el formato.</div>`; return; }
+  const base = median(pool.map(v => v.score)) || 1;
+  const map = new Map();
+  for (const v of pool) for (const w of new Set(words(v.title))) { if (!map.has(w)) map.set(w, []); map.get(w).push(v); }
+  const minW = Math.max(MIN_N, Math.round(pool.length * .02));
+  const wl = [...map].filter(([, a]) => a.length >= minW && a.length <= pool.length * .5)
+    .map(([w, a]) => { const best = a.reduce((x, y) => y.score > x.score ? y : x); return {label: w, n: a.length, lift: median(a.map(v => v.score)) / base, tip: "Ejemplo: " + best.title}; });
+  const up = wl.filter(r => r.lift > 1).sort((a, b) => b.lift - a.lift).slice(0, 12), down = wl.filter(r => r.lift < 1).sort((a, b) => a.lift - b.lift).slice(0, 8);
+  const feats = FEATS.map(([label, f]) => ({label, n: pool.filter(v => f(v.title)).length, lift: liftOf(pool.filter(v => f(v.title)), pool.filter(v => !f(v.title)))}))
+    .filter(r => r.n && r.n < pool.length).sort((a, b) => b.lift - a.lift);
+  const grp = (list, fn) => list.map(([label, f]) => { const g = pool.filter(f); return {label, n: g.length, lift: g.length ? median(g.map(v => v.score)) / base : 0}; }).filter(r => fn || r.n);
+  const wd = grp([1, 2, 3, 4, 5, 6, 0].map(i => [WD[i], v => new Date(v.published).getDay() === i]), true);
+  const hr = grp(HOURS.map(([a, b, l]) => [l, v => { const h = new Date(v.published).getHours(); return h >= a && h < b; }]));
+  const du = grp(DURS.map(([a, b, l]) => [l, v => v.durationSec > a && v.durationSec <= b]));
+  const top = rows => rows.filter(r => r.n >= MIN_N).sort((a, b) => b.lift - a.lift)[0];
+  const bf = top(feats), bd = top(wd), bh = top(hr), bu = top(du), bw = up.filter(r => r.n >= MIN_N).slice(0, 3);
+  const tips = [bf && bf.lift >= 1.1 && `los títulos que <strong>${esc(bf.label.toLowerCase())}</strong> rinden ${dec(bf.lift)}× más que el resto`,
+    bw.length && `las palabras que más suman son <strong>${bw.map(r => esc(r.label)).join(", ")}</strong>`,
+    bd && `el mejor día para publicar es el <strong>${bd.label.toLowerCase()}</strong> (${dec(bd.lift)}×)`,
+    bh && `la mejor franja es <strong>${esc(bh.label.toLowerCase())}</strong>`,
+    bu && s.fmt !== "short" && `la duración que mejor funciona es <strong>${esc(bu.label)}</strong>`].filter(Boolean);
+  el.innerHTML = intro + `
+    <div class="panel"><h2>Resumen</h2><p class="summary">${tips.length ? "En esta selección, " + tips.join("; ") + "." : "No hay patrones claros todavía: analiza más vídeos."}</p>
+      <p class="note" style="margin:8px 0 0">Mediana de outlier score de la selección: ${dec(base)}×. Hora local de tu navegador. Las filas en gris tienen menos de ${MIN_N} vídeos y no son fiables.</p></div>
+    <div class="cols">
+      <div class="panel"><h2>Palabras que suman</h2>${up.length ? liftTable(up, "Pasa el ratón por una palabra para ver su mejor vídeo.") : `<p class="sub">Ninguna palabra se repite lo bastante.</p>`}</div>
+      <div class="panel"><h2>Palabras que restan</h2>${down.length ? liftTable(down) : `<p class="sub">Ninguna palabra rinde por debajo de la media.</p>`}</div>
+    </div>
+    <div class="panel"><h2>Fórmulas de título</h2>${liftTable(feats, "Compara los títulos con cada rasgo frente a los que no lo tienen.")}</div>
+    <div class="cols">
+      <div class="panel"><h2>Día de publicación</h2>${liftTable(wd)}</div>
+      <div class="panel"><h2>Hora de publicación</h2>${liftTable(hr)}</div>
+    </div>
+    ${s.fmt === "short" ? "" : `<div class="panel"><h2>Duración</h2>${liftTable(du)}</div>`}
+    <div class="panel" style="display:grid;gap:12px"><div class="row" style="justify-content:space-between"><h2>Miniaturas que funcionan</h2><span class="sub">Los 24 vídeos con mayor outlier score</span></div>
+      <input id="ideaQ" class="search" style="padding:10px 14px;border:1px solid var(--line);border-radius:8px;background:var(--bg)" placeholder="Filtra por palabra del título o canal" value="${esc(s.q || "")}" aria-label="Filtrar miniaturas">
+      <div id="ideaGal">${galleryHtml(pool)}</div></div>`;
+}
+
 /* ---------- navegación y eventos ---------- */
-const TABS = ["canal", "outliers", "virales", "nichos", "historial"];
-const RENDER = {canal: renderCanal, outliers: renderOutliers, virales: renderVirales, nichos: renderNichos, historial: renderHistorial};
+const TABS = ["canal", "comparar", "outliers", "virales", "ideas", "nichos", "historial", "guardados"];
+const RENDER = {canal: renderCanal, comparar: renderComparar, outliers: renderOutliers, virales: renderVirales, ideas: renderIdeas, nichos: renderNichos, historial: renderHistorial, guardados: renderGuardados};
 function route() {
   const t = TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "canal";
   for (const k of TABS) { $("#view-" + k).hidden = k !== t; $(`[data-tab="${k}"]`).toggleAttribute("aria-current", k === t); if (k === t) $(`[data-tab="${k}"]`).setAttribute("aria-current", "page"); }
@@ -742,7 +1085,7 @@ function setMode() {
   $("#openKey").textContent = state.key ? "Clave de API" : "Conectar YouTube";
   state.channels = state.key ? [] : makeDemo().map(enrich);
   state.current = state.channels[0] || null;
-  state.nicheSearch = null; state.niche = null;
+  state.nicheSearch = null; state.niche = null; state.cmp = null;
   if (state.histSource !== "repo") { state.history = {}; if (!state.key) state.channels.forEach((c, i) => state.history[c.id] = demoHistory(c, i)); }
   if (state.key) { // recupera los últimos canales visitados y les toma la foto del día
     if (state.histSource !== "repo") for (const r of recentList()) { const h = localHist(r.id); if (h) state.history[r.id] = h; }
@@ -833,14 +1176,44 @@ document.addEventListener("click", e => {
   if (b.dataset.open) { state.current = state.channels.find(c => c.id === b.dataset.open); location.hash = "canal"; }
   if (b.dataset.sort) { const k = b.dataset.sort; state.sort = {k, d: state.sort.k === k ? -state.sort.d : (k === "title" ? 1 : -1)}; renderCanal(); }
   if (b.dataset.niche) { state.niche = b.dataset.niche; renderNichos(); }
+  if (b.dataset.vid) openVideo(b.dataset.vid);
+  if (b.dataset.close) $("#vidDialog").close();
+  if (b.dataset.save) {
+    const v = findVideo(b.dataset.save), col = ($("#saveCol")?.value || "").trim() || "General";
+    if (v) putSaved([snap(v, col), ...savedList().filter(x => x.id !== v.id)]);
+    openVideo(b.dataset.save); if (location.hash === "#guardados") renderGuardados();
+  }
+  if (b.dataset.unsave) {
+    putSaved(savedList().filter(x => x.id !== b.dataset.unsave));
+    if ($("#vidDialog").open && state.vidOpen === b.dataset.unsave) { if (findVideo(b.dataset.unsave)) openVideo(b.dataset.unsave); else $("#vidDialog").close(); }
+    if (location.hash === "#guardados") renderGuardados();
+  }
+  if (b.dataset.scol) { state.savedCol = b.dataset.scol; renderGuardados(); }
+  if (b.dataset.csv) exportCsv(b.dataset.csv);
+  if (b.dataset.cmp) {
+    const id = b.dataset.cmp, cur = state.cmp || [];
+    state.cmp = cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id].slice(-4);
+    renderComparar();
+  }
+  if (b.dataset.similar && state.current) {
+    const ch = state.current, p = $("#similarPanel"); p.classList.add("loading"); b.textContent = "Buscando…";
+    (async () => { try { ch.similar = await findSimilar(ch); ch.similarErr = null; } catch (err) { ch.similarErr = err.message; } renderCanal(); })();
+  }
+  if (b.dataset.analyze) {
+    const id = b.dataset.analyze, loaded = state.channels.find(c => c.id === id);
+    if (loaded) { state.current = loaded; location.hash === "#canal" ? renderCanal() : location.hash = "canal"; scrollTo(0, 0); }
+    else if (state.key) { location.hash = "canal"; scrollTo(0, 0); loadChannel(id); }
+  }
   if (b.dataset.fmt) {
     const g = b.parentElement.id;
     if (g === "canalFmt") { state.fmt = b.dataset.fmt; renderCanal(); }
     if (g === "outFmt") { state.out.fmt = b.dataset.fmt; renderOutliers(); }
     if (g === "virFmt") { state.vir.fmt = b.dataset.fmt; renderVirales(); }
+    if (g === "ideaFmt") { state.idea.fmt = b.dataset.fmt; renderIdeas(); }
   }
 });
 document.addEventListener("input", e => {
+  if (e.target.id === "ideaQ") { state.idea.q = e.target.value; $("#ideaGal").innerHTML = galleryHtml(ideaPool()); }
   if (e.target.id === "minScore") { state.out.min = +e.target.value; $("#minVal").textContent = state.out.min + "×"; clearTimeout(state.t); state.t = setTimeout(() => { renderOutliers(); $("#minScore").focus(); }, 120); }
 });
 document.addEventListener("change", e => {
@@ -848,6 +1221,7 @@ document.addEventListener("change", e => {
   if (id === "outNiche") { state.out.niche = v; renderOutliers(); }
   if (id === "outDays") { state.out.days = +v; renderOutliers(); }
   if (id === "virDays") { state.vir.days = +v; renderVirales(); }
+  if (id === "ideaCh") { state.idea.ch = v; renderIdeas(); }
   if (id === "nicheSel" && state.current) { state.current.niche = v; state.current.nicheAuto = false; enrich(state.current); if (!state.current.demo) store.set("ol_niche_" + state.current.id, JSON.stringify(v)); renderCanal(); }
 });
 addEventListener("hashchange", route);
