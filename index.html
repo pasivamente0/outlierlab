@@ -1056,6 +1056,7 @@ function renderIdeas() {
   el.innerHTML = intro + `
     <div class="panel"><h2>Resumen</h2><p class="summary">${tips.length ? "En esta selección, " + tips.join("; ") + "." : "No hay patrones claros todavía: analiza más vídeos."}</p>
       <p class="note" style="margin:8px 0 0">Mediana de outlier score de la selección: ${dec(base)}×. Hora local de tu navegador. Las filas en gris tienen menos de ${MIN_N} vídeos y no son fiables.</p></div>
+    ${genPanel()}
     <div class="cols">
       <div class="panel"><h2>Palabras que suman</h2>${up.length ? liftTable(up, "Pasa el ratón por una palabra para ver su mejor vídeo.") : `<p class="sub">Ninguna palabra se repite lo bastante.</p>`}</div>
       <div class="panel"><h2>Palabras que restan</h2>${down.length ? liftTable(down) : `<p class="sub">Ninguna palabra rinde por debajo de la media.</p>`}</div>
@@ -1069,6 +1070,123 @@ function renderIdeas() {
     <div class="panel" style="display:grid;gap:12px"><div class="row" style="justify-content:space-between"><h2>Miniaturas que funcionan</h2><span class="sub">Los 24 vídeos con mayor outlier score</span></div>
       <input id="ideaQ" class="search" style="padding:10px 14px;border:1px solid var(--line);border-radius:8px;background:var(--bg)" placeholder="Filtra por palabra del título o canal" value="${esc(s.q || "")}" aria-label="Filtrar miniaturas">
       <div id="ideaGal">${galleryHtml(pool)}</div></div>`;
+}
+
+/* ---------- generador de títulos ---------- */
+// Dos modos: plantillas (gratis, sin IA) y Claude con la clave de Anthropic del propio usuario, que se guarda solo en este navegador.
+const FKEYS = ["number", "question", "caps", "first", "time", "money", "vs", "super", "warn", "paren", "shortT", "longT"];
+const FORMULAS = {
+  number: ["7 errores con {t} que casi todo el mundo comete", "{T}: 10 cosas que nadie te cuenta"],
+  question: ["¿Merece la pena {t} en {año}?", "¿Por qué casi nadie habla de {t}?"],
+  caps: ["{T}: el ERROR que más caro me salió", "{T} NO es lo que te han contado"],
+  first: ["Probé {t} durante 30 días y esto es lo que pasó", "Me equivoqué con {t} (y cómo lo arreglé)"],
+  time: ["{T} en 24 horas: ¿se puede?", "30 días haciendo {t}: resultados reales"],
+  money: ["Cuánto dinero da de verdad {t} (cifras reales)", "{T} con solo 100 €: el experimento"],
+  vs: ["{T} vs la alternativa barata: comparativa honesta", "{T} contra lo de siempre: ¿cuál gana?"],
+  super: ["La mejor forma de empezar con {t} (y la peor)", "Lo más difícil de {t}, explicado fácil"],
+  warn: ["No empieces con {t} sin ver esto", "La verdad sobre {t}"],
+  paren: ["{T} explicado en 10 minutos (sin tecnicismos)", "{T} paso a paso (guía para principiantes)"],
+  shortT: ["{T} en 60 segundos", "El truco de {t}"],
+  longT: ["Todo lo que he aprendido sobre {t} después de un año, sin filtros y con números reales"]
+};
+const featKeyed = pool => FEATS.map(([label, f], i) => { const w = pool.filter(v => f(v.title)), wo = pool.filter(v => !f(v.title));
+  return {key: FKEYS[i], label, n: w.length, lift: w.length && wo.length ? median(w.map(v => v.score)) / (median(wo.map(v => v.score)) || 1) : 0}; });
+// Remezcla: cambia el trozo concreto de un título outlier (nombres propios o palabras raras en la selección) por el tema del usuario.
+function remix(title, topic, df) {
+  const toks = title.replace(/\s*#\S+/g, "").trim().split(/\s+/), key = w => w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  const isTopic = (w, i) => { const k = key(w); if (!k || STOP.has(k) || !/\p{L}/u.test(k)) return false;
+    return ((df[k] || 0) <= 2 && !/[éíó]$/.test(k)) || (i > 0 && /\p{Lu}/u.test(w[0]) && !/[.!?¡¿:]$/.test(toks[i - 1])) || (i === 0 && /:$/.test(w)); };
+  let s = toks.findIndex(isTopic); if (s < 0) return null;
+  if (s === 1 && /^\p{Lu}\p{Ll}+$/u.test(toks[0]) && /^\p{Lu}/u.test(toks[1]) && !STOP.has(key(toks[0]))) s = 0; // «Hollow Knight»
+  let e = s;
+  while (e + 1 < toks.length && (isTopic(toks[e + 1], e + 1) || /^\d+[\p{P}]*$/u.test(toks[e + 1])) && !/[:,.!?)]$/.test(toks[e]) && /^[\p{L}\p{N}]/u.test(toks[e + 1])) e++;
+  const tail = (toks[e].match(/[^\p{L}\p{N}]+$/u) || [""])[0], lead = (toks[s].match(/^[^\p{L}\p{N}]+/u) || [""])[0];
+  const out = [...toks.slice(0, s), lead + (s === 0 ? capF(topic) : topic) + tail, ...toks.slice(e + 1)].join(" ");
+  return out.toLowerCase() === title.toLowerCase() ? null : out;
+}
+function templateIdeas(topic, pool) {
+  const fill = s => s.replaceAll("{T}", capF(topic)).replaceAll("{t}", topic).replaceAll("{año}", new Date().getFullYear());
+  const fr = featKeyed(pool).filter(r => FORMULAS[r.key] && r.n >= MIN_N).sort((a, b) => b.lift - a.lift).slice(0, 4), out = [];
+  for (const r of fr) for (const f of FORMULAS[r.key].slice(0, 2)) out.push({title: fill(f), format: r.key === "shortT" ? "short" : "largo", why: `Fórmula «${r.label.toLowerCase()}»: rinde ${dec(r.lift)}× en esta selección`});
+  const df = {};
+  for (const v of pool) for (const w of new Set(words(v.title))) df[w] = (df[w] || 0) + 1;
+  const seen = new Set(out.map(x => x.title.toLowerCase()));
+  for (const v of [...pool].sort((a, b) => b.score - a.score).slice(0, 60)) {
+    if (out.length >= 14) break;
+    const t = remix(v.title, topic, df); if (!t || seen.has(t.toLowerCase())) continue;
+    seen.add(t.toLowerCase());
+    out.push({title: t, format: isShort(v) ? "short" : "largo", why: `Misma estructura que «${v.title}» (${dec(v.score)}× en ${chName(v)})`});
+  }
+  return out;
+}
+const AI_MODEL = "claude-opus-5-5";
+const IDEA_SCHEMA = {type: "object", additionalProperties: false, required: ["ideas"], properties: {ideas: {type: "array", items: {type: "object", additionalProperties: false,
+  required: ["title", "format", "why", "thumbnail", "thumbText"], properties: {title: {type: "string"}, format: {type: "string", enum: ["largo", "short"]},
+  why: {type: "string"}, thumbnail: {type: "string"}, thumbText: {type: "string"}}}}}};
+async function aiIdeas(topic, pool) {
+  const key = store.get("ol_ai_key");
+  const byScore = [...pool].sort((a, b) => b.score - a.score), line = v => `- [${dec(v.score)}×, ${fmt(v.views)} vistas, ${isShort(v) ? "Short" : "largo " + dur(v.durationSec)}, ${chName(v)}] ${v.title}`;
+  const fl = featKeyed(pool).filter(r => r.n >= MIN_N).map(r => `${r.label}: ${dec(r.lift)}×`).join("; ");
+  const prompt = `Eres un estratega de contenido de YouTube. Te paso datos reales de canales que estoy analizando. El "outlier score" es las vistas de cada vídeo divididas entre la mediana de su canal (3× = triplicó lo normal).
+
+Vídeos que más destacaron:
+${byScore.slice(0, 25).map(line).join("\n")}
+
+Vídeos que peor funcionaron:
+${byScore.slice(-8).map(line).join("\n")}
+
+Cuánto rinde cada rasgo de título frente al resto: ${fl || "sin datos suficientes"}.
+
+Mi tema: «${topic}».
+
+Propón 10 ideas de vídeo originales sobre mi tema que aprovechen los patrones de los outliers (estructura del título, promesa, curiosidad, formato) sin copiar ningún título literalmente. Escribe en el idioma de los títulos de arriba. Para cada idea da: el título (máximo 70 caracteres), si es vídeo largo o short, por qué debería funcionar citando el outlier o el patrón en que te basas (una frase), un concepto de miniatura (qué se ve, en una frase) y el texto de la miniatura (máximo 4 palabras, o vacío si es mejor sin texto).`;
+  let r;
+  try {
+    r = await fetch("https://api.anthropic.com/v1/messages", {method: "POST", headers: {"content-type": "application/json", "x-api-key": key, "anthropic-version": "2026-10-21",
+      "anthropic-beta": "server-side-fallback-2026-07-01", "anthropic-dangerous-direct-browser-access": "true"},
+      body: JSON.stringify({model: AI_MODEL, max_tokens: 16000, fallbacks: "default", output_config: {effort: "medium", format: {type: "json_schema", schema: IDEA_SCHEMA}},
+        messages: [{role: "user", content: prompt}]})});
+  } catch { throw new Error("No se pudo conectar con la API de Anthropic. Abre la app desde GitHub Pages o desde el archivo, no desde una vista previa que bloquee conexiones."); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(r.status === 401 ? "La clave de Anthropic no es válida." : r.status === 429 ? "Demasiadas peticiones seguidas o límite de gasto alcanzado. Prueba en un minuto." : j.error?.message || `Error ${r.status} de la API de Anthropic`);
+  if (j.stop_reason === "refusal") throw new Error("El modelo no quiso generar ideas para ese tema. Prueba a reformularlo.");
+  if (j.stop_reason === "max_tokens") throw new Error("La respuesta se cortó. Vuelve a intentarlo.");
+  const ideas = JSON.parse((j.content || []).filter(b => b.type === "text").map(b => b.text).join("")).ideas;
+  ideas.cost = j.usage ? (j.usage.input_tokens * 4 + j.usage.output_tokens * 20) / 1e6 : null;
+  return ideas;
+}
+function genOutHtml() {
+  const g = state.gen;
+  if (!g) return "";
+  if (g.loading) return `<p class="sub" style="margin:0">${g.ai ? "Pensando ideas con Claude… suele tardar entre 20 y 60 segundos." : "Generando…"}</p>`;
+  if (g.err) return `<p class="err" style="margin:0">${esc(g.err)}</p>`;
+  if (!g.items.length) return `<div class="empty">No he sacado ideas: analiza más vídeos o prueba otro tema.</div>`;
+  return `<ol style="margin:0;padding-left:22px;display:grid;gap:12px">${g.items.map((x, i) => `<li><div class="row" style="gap:8px"><strong>${esc(x.title)}</strong><span class="fmt">${x.format === "short" ? "Short" : "Largo"}</span>
+      <button class="mini" type="button" data-copy="${i}">Copiar</button></div>
+      <div class="sub">${esc(x.why)}</div>${x.thumbnail ? `<div class="sub">Miniatura: ${esc(x.thumbnail)}${x.thumbText ? ` · texto «${esc(x.thumbText)}»` : ""}</div>` : ""}</li>`).join("")}</ol>
+    <p class="note" style="margin:0">${g.ai ? `Generado con Claude${g.items.cost != null ? ` · coste aproximado ${g.items.cost < .01 ? "menos de 1 céntimo" : "$" + g.items.cost.toFixed(2)}` : ""}.` : "Plantillas sin IA: las fórmulas salen de los rasgos que mejor rinden y las remezclas cambian el tema de los mejores outliers. Revisa que cada frase tenga sentido."}</p>`;
+}
+function genPanel() {
+  const ai = !!store.get("ol_ai_key"), g = state.gen;
+  return `<div class="panel" style="display:grid;gap:12px" id="genPanel">
+    <div class="row" style="justify-content:space-between"><h2>Generador de títulos</h2><span class="sub">${ai ? "Con IA (Claude) y tu clave de Anthropic" : "Plantillas sacadas de los outliers · gratis"}</span></div>
+    <form class="search" id="genForm"><input id="genTopic" placeholder="Tu tema, p. ej. fondos indexados para principiantes" value="${esc(g?.topic || "")}" aria-label="Tema"><button class="btn primary">Generar ideas</button></form>
+    <div class="row sub" style="gap:10px">${ai ? `<label class="row" style="gap:6px"><input type="checkbox" id="genUseAi" ${state.genUseAi === false ? "" : "checked"}> Usar IA</label><button class="mini" type="button" data-aikey="off">Quitar clave de Anthropic</button>`
+      : `<button class="mini" type="button" data-aikey="set">Activar IA con una clave de Anthropic</button>`}</div>
+    <div id="aiKeyBox" hidden style="display:grid;gap:8px">
+      <p class="note" style="margin:0">Crea una clave en console.anthropic.com → API Keys y añade saldo. Cada generación cuesta unos céntimos. La clave se guarda solo en este navegador y se envía únicamente a la API de Anthropic.</p>
+      <div class="search"><input id="aiKeyInput" autocomplete="off" spellcheck="false" placeholder="sk-ant-..." style="font-family:var(--mono)"><button class="btn primary" type="button" data-aikey="save">Guardar clave</button></div>
+      <span id="aiKeyMsg" class="err"></span></div>
+    <div id="genOut">${genOutHtml()}</div></div>`;
+}
+async function runGenerator(topic) {
+  const useAi = !!store.get("ol_ai_key") && $("#genUseAi")?.checked !== false, pool = ideaPool();
+  state.gen = {topic, ai: useAi, loading: true, items: []};
+  $("#genOut").innerHTML = genOutHtml();
+  try { state.gen.items = useAi ? await aiIdeas(topic, pool) : templateIdeas(topic, pool); }
+  catch (e) { state.gen.err = e.message; }
+  state.gen.loading = false;
+  if ($("#genOut")) $("#genOut").innerHTML = genOutHtml();
 }
 
 /* ---------- navegación y eventos ---------- */
@@ -1152,6 +1270,7 @@ document.addEventListener("submit", async e => {
     catch (err) { renderNichos("!" + err.message); }
     finally { v.classList.remove("loading"); }
   }
+  if (e.target.id === "genForm") { e.preventDefault(); const t = $("#genTopic").value.trim(); if (t) runGenerator(t); }
   if (e.target.id === "keyForm") {
     e.preventDefault(); const k = $("#keyInput").value.trim();
     if (!/^AIza[\w-]{20,}$/.test(k)) { $("#keyMsg").innerHTML = `<span class="err">La clave debería empezar por “AIza”. Cópiala de la consola de Google Cloud.</span>`; return; }
@@ -1190,6 +1309,17 @@ document.addEventListener("click", e => {
   }
   if (b.dataset.scol) { state.savedCol = b.dataset.scol; renderGuardados(); }
   if (b.dataset.csv) exportCsv(b.dataset.csv);
+  if (b.dataset.aikey === "set") { $("#aiKeyBox").hidden = false; $("#aiKeyInput").focus(); }
+  if (b.dataset.aikey === "save") {
+    const k = $("#aiKeyInput").value.trim();
+    if (!/^sk-ant-[\w-]{20,}$/.test(k)) { $("#aiKeyMsg").textContent = "La clave debería empezar por «sk-ant-». Cópiala de console.anthropic.com."; return; }
+    store.set("ol_ai_key", k); renderIdeas();
+  }
+  if (b.dataset.aikey === "off") { store.set("ol_ai_key", null); renderIdeas(); }
+  if (b.dataset.copy) {
+    const t = state.gen?.items[+b.dataset.copy]?.title;
+    if (t) navigator.clipboard?.writeText(t).then(() => { b.textContent = "Copiado"; }, () => { b.textContent = "No se pudo copiar"; });
+  }
   if (b.dataset.cmp) {
     const id = b.dataset.cmp, cur = state.cmp || [];
     state.cmp = cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id].slice(-4);
@@ -1222,6 +1352,7 @@ document.addEventListener("change", e => {
   if (id === "outDays") { state.out.days = +v; renderOutliers(); }
   if (id === "virDays") { state.vir.days = +v; renderVirales(); }
   if (id === "ideaCh") { state.idea.ch = v; renderIdeas(); }
+  if (id === "genUseAi") state.genUseAi = e.target.checked;
   if (id === "nicheSel" && state.current) { state.current.niche = v; state.current.nicheAuto = false; enrich(state.current); if (!state.current.demo) store.set("ol_niche_" + state.current.id, JSON.stringify(v)); renderCanal(); }
 });
 addEventListener("hashchange", route);
